@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gym-tracker-db
+    environment:
+      POSTGRES_USER: gym
+      POSTGRES_PASSWORD: gym_password
+      POSTGRES_DB: gym_tracker
+    ports:
+      - '5433:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
