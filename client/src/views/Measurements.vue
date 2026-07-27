@@ -68,6 +68,38 @@ async function deleteMeasurement(id: number) {
 function formatDate(date: string) {
   return new Date(date).toLocaleDateString('uk');
 }
+
+// Measurements are sorted DESC (newest first), so "previous" is the next item in the array
+function getDiff(currentIndex: number) {
+  const current = measurements.value[currentIndex];
+  const previous = measurements.value[currentIndex + 1]; // older measurement
+  if (!previous) return null; // oldest measurement — no diff
+
+  const diffs: { label: string; diff: number; unit: string }[] = [];
+
+  // Weight diff
+  if (current.weight != null && previous.weight != null) {
+    const d = +(current.weight - previous.weight).toFixed(1);
+    if (d !== 0) diffs.push({ label: 'Вага', diff: d, unit: 'кг' });
+  }
+
+  // Entry diffs — match by type
+  if (current.entries && previous.entries) {
+    for (const entry of current.entries) {
+      const prev = previous.entries.find((e: any) => e.type === entry.type);
+      if (prev && entry.value != null && prev.value != null) {
+        const d = +(entry.value - prev.value).toFixed(1);
+        if (d !== 0) diffs.push({ label: entry.type, diff: d, unit: 'см' });
+      }
+    }
+  }
+
+  return diffs.length > 0 ? diffs : null;
+}
+
+function formatDiff(diff: number): string {
+  return diff > 0 ? `+${diff}` : `${diff}`;
+}
 </script>
 
 <template>
@@ -161,7 +193,7 @@ function formatDate(date: string) {
 
     <div v-else class="space-y-2">
       <div
-        v-for="m in measurements"
+        v-for="(m, index) in measurements"
         :key="m.id"
         class="bg-white rounded-lg border p-3"
       >
@@ -174,9 +206,39 @@ function formatDate(date: string) {
             ✕
           </button>
         </div>
-        <p v-if="m.weight" class="text-sm">Вага: {{ m.weight }} кг</p>
+        <p v-if="m.weight" class="text-sm">
+          Вага: {{ m.weight }} кг
+          <span
+            v-if="getDiff(index)?.find((d) => d.label === 'Вага')"
+            :class="
+              getDiff(index)!.find((d) => d.label === 'Вага')!.diff > 0
+                ? 'text-red-500'
+                : 'text-green-500'
+            "
+            class="ml-1 text-xs font-medium"
+          >
+            ({{
+              formatDiff(getDiff(index)!.find((d) => d.label === 'Вага')!.diff)
+            }}
+            кг)
+          </span>
+        </p>
         <p v-for="e in m.entries" :key="e.id" class="text-sm text-gray-600">
           {{ e.type }}: {{ e.value }} см
+          <span
+            v-if="getDiff(index)?.find((d) => d.label === e.type)"
+            :class="
+              getDiff(index)!.find((d) => d.label === e.type)!.diff > 0
+                ? 'text-green-500'
+                : 'text-red-500'
+            "
+            class="ml-1 text-xs font-medium"
+          >
+            ({{
+              formatDiff(getDiff(index)!.find((d) => d.label === e.type)!.diff)
+            }}
+            см)
+          </span>
         </p>
         <p v-if="m.notes" class="text-xs text-gray-400 mt-1 italic">
           {{ m.notes }}
