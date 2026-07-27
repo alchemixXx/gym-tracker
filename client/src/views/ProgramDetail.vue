@@ -35,11 +35,17 @@ async function loadProgram() {
 
 function dayProgress(day: any) {
   const totalSets = day.exercises.reduce(
-    (acc: number, ex: any) => acc + ex.sets.length,
+    (acc: number, ex: any) =>
+      acc +
+      ex.sets.reduce((sum: number, s: any) => sum + (Number(s.count) || 1), 0),
     0,
   );
   const doneSets = day.exercises.reduce(
-    (acc: number, ex: any) => acc + ex.sets.filter((s: any) => s.done).length,
+    (acc: number, ex: any) =>
+      acc +
+      ex.sets
+        .filter((s: any) => s.done)
+        .reduce((sum: number, s: any) => sum + (Number(s.count) || 1), 0),
     0,
   );
   return { totalSets, doneSets };

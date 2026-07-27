@@ -11,13 +11,52 @@
 
 ## Технічний стек
 
-| Шар        | Технологія                                      |
-| ---------- | ----------------------------------------------- |
-| Frontend   | Vue.js 3 + TypeScript + Tailwind CSS + Pinia    |
-| Backend    | Node.js + Express + TypeScript                  |
-| База даних | PostgreSQL (Docker локально, Render для деплою) |
-| PWA        | vite-plugin-pwa (Service Worker, installable)   |
-| Хостинг    | Render (backend + DB), Vercel/Render (frontend) |
+| Шар        | Технологія                                              |
+| ---------- | ------------------------------------------------------- |
+| Frontend   | Vue 3.5 + TypeScript 5.6 + Tailwind CSS 3.4 + Pinia 2.2 |
+| Backend    | Node.js + Express 4.21 + TypeScript 5.6                 |
+| База даних | PostgreSQL 16 (Docker локально, Render для деплою)      |
+| PWA        | vite-plugin-pwa 0.20 (Service Worker, installable)      |
+| Збірка     | Vite 5.4, tsx (dev server)                              |
+| Монорепо   | npm workspaces (client + server)                        |
+
+## Архітектура проєкту
+
+```
+gym-tracker/
+├── package.json              ← workspaces root, scripts для dev/build/start
+├── docker-compose.yml        ← PostgreSQL 16 на порту 5433
+├── client/                   ← Vue 3 SPA (порт 5173 у dev)
+│   ├── src/
+│   │   ├── App.vue           ← Layout: header + nav + router-view (або UserSelect)
+│   │   ├── main.ts           ← Pinia + Router + mount
+│   │   ├── api/index.ts      ← fetch-based API клієнт (/api proxy)
+│   │   ├── stores/user.ts    ← Pinia store з localStorage persistence
+│   │   ├── router/index.ts   ← 6 маршрутів
+│   │   ├── views/            ← 7 компонентів-сторінок
+│   │   └── assets/main.css   ← Tailwind directives
+│   ├── vite.config.ts        ← PWA plugin + /api proxy до localhost:3000
+│   └── tailwind.config.js
+└── server/                   ← Express API (порт 3000)
+    ├── src/
+    │   ├── index.ts          ← Express app + static serve у production
+    │   ├── db/
+    │   │   ├── pool.ts       ← pg Pool (DATABASE_URL || default)
+    │   │   ├── migrate.ts    ← Reads and runs SQL migrations
+    │   │   └── migrations/001_initial.sql
+    │   └── routes/
+    │       ├── users.ts
+    │       ├── templates.ts
+    │       ├── programs.ts
+    │       └── measurements.ts
+    └── tsconfig.json
+```
+
+### Production режим
+
+У production сервер роздає збілджений клієнт як статику з `client/dist/` і обробляє SPA fallback. Один процес — один порт.
+
+---
 
 ## Основні концепції
 
@@ -39,204 +78,202 @@
 
 ---
 
-## Функціональні можливості
+## Функціональні можливості (реалізовано)
 
-### Scope 1: MVP (реалізовано)
-
-#### 1.1 Вибір користувача
+### 1. Вибір користувача
 
 - Список профілів на головному екрані
 - Створення нового профілю (тільки ім'я)
 - Перемикання між профілями
 - Збереження вибору в localStorage
+- Logout (повернення до вибору профілю)
 
-#### 1.2 Управління шаблонами
+### 2. Управління шаблонами
 
 - Список шаблонів користувача
 - Створення / редагування / видалення шаблонів
 - Структура: Дні → Вправи → Підходи
 - Формат підходів: вага (кг) × кількість підходів × повторення (напр. `65 кг 4×10`)
 - Підтримка розминкових підходів (індивідуальні: `40×15`, `50×12`)
-- Кнопка "Створити програму з шаблону"
+- Кнопка "Створити програму з шаблону" (прямо з template detail)
 
-#### 1.3 Тижневі програми
+### 3. Тижневі програми
 
-- Список програм (поточна + історія)
+- Список програм (поточна + історія), сортування за датою створення
 - Створення з шаблону (копіює структуру, можна змінити ваги)
 - Створення з нуля (порожня програма)
-- Дедуплікація: якщо програма з такою назвою вже існує у користувача — повертається існуюча замість створення дубліката
-- Редагування програми перед початком (та під час тижня):
+- Дедуплікація: якщо програма з такою назвою вже існує — повертається існуюча
+- Редагування програми (edit mode у ProgramDetail):
   - Додавання / видалення днів, вправ, підходів
   - Зміна назви програми та днів
   - Коригування ваги, кількості підходів і повторень
   - Повна заміна структури через PUT з масивом `days`
 - Перегляд днів з прогресом (скільки підходів виконано)
 - Дата початку програми
+- Видалення програми
 
-#### 1.4 Тренувальна сесія (Gym View)
+### 4. Тренувальна сесія (GymSession)
 
-- Вибір дня з поточної програми
+- Вибір дня з поточної програми → перехід на `/programs/:id/session/:dayId`
 - Список вправ з підходами / вагою / повтореннями
-- Відмітка підходів як виконаних (tap to check)
-- Необов'язковий текстовий коментар до кожної вправи
+- Відмітка підходів як виконаних (tap to toggle, збереження на сервер)
+- Текстовий коментар до кожної вправи (зберігається onBlur)
 - Обов'язковий коментар до дня (фідбек після тренування)
+- Кнопка "Завершити тренування" (зберігає day_note + completed_at)
 - Мінімальний UI — тільки список і чекбокси
 
-#### 1.5 Історія
+### 5. Історія тренувань
 
-- Перегляд минулих програм
-- Перегляд коментарів до днів і вправ
-- Інформація про прогрес (виконані підходи)
+- При редагуванні програми автоматично завантажується історія:
+  - **Exercise history** — коментарі до вправ з минулих тренувань (by day name + exercise name, last 3)
+  - **Day history** — коментарі до днів з минулих тренувань (by day name, last 3)
+- Показуються у контексті редагування (amber/blue фон)
+- Cross-program: шукає по всіх програмах користувача, окрім поточної
+- Перегляд виконаних підходів (done/total progress bar)
 
-#### 1.6 Заміри тіла
+### 6. Заміри тіла
 
 - Додавання запису: дата, вага тіла, довільні обхвати
-- Типи замірів: Талія, Груди, Біцепс, Стегно, Шия (+ можливість додати свої)
-- Перегляд історії замірів
+- Типи замірів: Гомілка, Стегно, Сідниці, Талія, Груди, Плече/біцепс
+- Перегляд історії замірів (сортовано за датою, нові зверху)
 - Видалення записів
 - Нотатки до запису
 
-#### 1.7 PWA
+### 7. PWA
 
 - Installable (можна додати на домашній екран Android)
-- Service Worker для кешування статики
+- Service Worker для кешування статики (workbox, globPatterns: js/css/html/ico/png/svg)
 - Standalone display mode (без адресного рядка)
+- Portrait orientation, theme color: #2563eb
 
 ---
 
-### Scope 2: Покращення UX
+## Frontend — Маршрутизація
 
-#### 2.1 Порівняння тижнів
+| Маршрут                        | Компонент          | Опис                |
+| ------------------------------ | ------------------ | ------------------- |
+| `/` (redirect)                 | —                  | → `/programs`       |
+| `/programs`                    | Programs.vue       | Список програм      |
+| `/programs/:id`                | ProgramDetail.vue  | Деталі + edit mode  |
+| `/programs/:id/session/:dayId` | GymSession.vue     | Тренувальна сесія   |
+| `/templates`                   | Templates.vue      | Список шаблонів     |
+| `/templates/:id`               | TemplateDetail.vue | Редагування шаблону |
+| `/measurements`                | Measurements.vue   | Заміри тіла         |
 
-- При створенні нової програми показувати попередню програму + фідбек поруч
-- Можливість "скопіювати минулий тиждень і відредагувати"
-
-#### 2.2 Редагування програми під час тижня (реалізовано)
-
-- ✅ Додавання/видалення вправ і підходів прямо в програмі
-- Зміна ваги/повторень під час сесії (якщо реальність відрізняється від плану)
-
-#### 2.3 Drag & drop
-
-- Перетягування вправ для зміни порядку
-- Перетягування днів
-
-#### 2.4 Швидке введення підходів
-
-- Парсинг текстового вводу: `65 4x10` → 65 кг, 4 підходи по 10
-- Копіювання підходів з попередньої вправи
-
-#### 2.5 Підсумок тижня
-
-- Автоматичний підсумок коментарів за тиждень
-- Загальний об'єм (сети × повторення × вага) по м'язових групах
+Навігація: sticky header + tabs (Програми / Шаблони / Заміри).  
+Якщо `currentUser === null` — показується `UserSelect.vue` замість основного layout.
 
 ---
 
-### Scope 3: Аналітика та прогрес
-
-#### 3.1 Графіки прогресу
-
-- Динаміка ваги тіла з часом
-- Динаміка робочої ваги по кожній вправі
-- Об'єм тренувань (загальний тоннаж) по тижнях
-
-#### 3.2 Персональні рекорди (PR)
-
-- Автоматичне відстеження максимальної ваги по кожній вправі
-- Позначка коли було побито рекорд
-
-#### 3.3 Консистентність
-
-- Календар тренувань (скільки днів на тижні тренувався)
-- Стрік (кількість тижнів без пропуску)
-
-#### 3.4 Обхвати тіла — графіки
-
-- Динаміка кожного заміру з часом
-- Порівняння "було — стало"
-
----
-
-### Scope 4: Інфраструктура та зручність
-
-#### 4.1 Авторизація
-
-- Пароль або PIN для профілю
-- OAuth (Google) як опція
-
-#### 4.2 Офлайн режим
-
-- Повна робота без інтернету в залі
-- Синхронізація при поверненні в мережу
-- IndexedDB для локального сховища
-
-#### 4.3 Експорт / Імпорт
-
-- Експорт програм і шаблонів в JSON
-- Імпорт з файлу
-- Шеринг шаблону між користувачами
-
-#### 4.4 Сповіщення
-
-- Нагадування про тренування (PWA notifications)
-- Нагадування зробити заміри
-
-#### 4.5 Деплой
-
-- CI/CD pipeline (GitHub Actions)
-- Автоматичний деплой на Render
-- Бекапи бази даних
-
----
-
-## Модель даних
+## Модель даних (PostgreSQL)
 
 ```
 User
-  id, name, created_at
+  id SERIAL PK, name VARCHAR(100), created_at TIMESTAMP
 
 Template
-  id, user_id, name, created_at, updated_at
-  └─ TemplateDays[]
-       id, template_id, name, sort_order
-       └─ TemplateExercises[]
-            id, template_day_id, name, sort_order
-            └─ TemplateSets[]
-                 id, template_exercise_id, weight, reps, count, sort_order
+  id SERIAL PK, user_id FK→users, name VARCHAR(200), created_at, updated_at
+  └─ TemplateDays
+       id SERIAL PK, template_id FK→templates (CASCADE), name VARCHAR(200), sort_order INT
+       └─ TemplateExercises
+            id SERIAL PK, template_day_id FK→template_days (CASCADE), name VARCHAR(200), sort_order INT
+            └─ TemplateSets
+                 id SERIAL PK, template_exercise_id FK→template_exercises (CASCADE),
+                 weight DECIMAL(6,1), reps INT, count INT DEFAULT 1, sort_order INT
 
-WeeklyProgram
-  id, user_id, template_id?, name, start_date, created_at, updated_at
-  └─ ProgramDays[]
-       id, program_id, name, sort_order, day_note?, completed_at?
-       └─ ProgramExercises[]
-            id, program_day_id, name, sort_order, note?
-            └─ ProgramSets[]
-                 id, program_exercise_id, weight, reps, count, done, sort_order
+Program
+  id SERIAL PK, user_id FK→users, template_id FK→templates (SET NULL),
+  name VARCHAR(200), start_date DATE, created_at, updated_at
+  └─ ProgramDays
+       id SERIAL PK, program_id FK→programs (CASCADE), name VARCHAR(200),
+       sort_order INT, day_note TEXT, completed_at TIMESTAMP
+       └─ ProgramExercises
+            id SERIAL PK, program_day_id FK→program_days (CASCADE),
+            name VARCHAR(200), sort_order INT, note TEXT
+            └─ ProgramSets
+                 id SERIAL PK, program_exercise_id FK→program_exercises (CASCADE),
+                 weight DECIMAL(6,1), reps INT, count INT DEFAULT 1,
+                 done BOOLEAN DEFAULT FALSE, sort_order INT
 
 BodyMeasurement
-  id, user_id, date, weight?, notes?, created_at
-  └─ MeasurementEntries[]
-       id, measurement_id, type, value
+  id SERIAL PK, user_id FK→users, date DATE, weight DECIMAL(5,1),
+  notes TEXT, created_at TIMESTAMP
+  └─ MeasurementEntries
+       id SERIAL PK, measurement_id FK→body_measurements (CASCADE),
+       type VARCHAR(50), value DECIMAL(6,1)
 ```
 
-## API структура
+Індекси: `templates(user_id)`, `programs(user_id)`, `body_measurements(user_id)`, `body_measurements(user_id, date)`.
+
+---
+
+## API
+
+Base URL: `/api`
+
+### Users
 
 ```
-GET/POST       /api/users
-GET/PUT/DELETE  /api/users/:id
+GET    /api/users              — список всіх користувачів
+GET    /api/users/:id          — користувач по id
+POST   /api/users              — створити {name}
+PUT    /api/users/:id          — оновити {name}
+DELETE /api/users/:id          — видалити (CASCADE)
+```
 
-GET/POST       /api/users/:userId/templates
-GET/PUT/DELETE  /api/users/:userId/templates/:id
+### Templates
 
-GET/POST       /api/users/:userId/programs
-GET/PUT/DELETE  /api/users/:userId/programs/:id        ← PUT приймає {name?, start_date?, days?} для повної заміни структури
-PUT             /api/users/:userId/programs/:id/days/:dayId
-PUT             /api/users/:userId/programs/:id/days/:dayId/exercises/:exId
-PUT             /api/users/:userId/programs/:id/days/:dayId/exercises/:exId/sets/:setId
+```
+GET    /api/users/:userId/templates           — список шаблонів
+GET    /api/users/:userId/templates/:id       — шаблон з повною структурою (days→exercises→sets)
+POST   /api/users/:userId/templates           — створити {name, days?}
+PUT    /api/users/:userId/templates/:id       — замінити {name?, days?}
+DELETE /api/users/:userId/templates/:id       — видалити
+```
 
-GET/POST       /api/users/:userId/measurements
-GET/DELETE     /api/users/:userId/measurements/:id
+### Programs
+
+```
+GET    /api/users/:userId/programs            — список програм
+GET    /api/users/:userId/programs/:id        — програма з повною структурою
+POST   /api/users/:userId/programs            — створити {name, start_date?, template_id?, days?}
+PUT    /api/users/:userId/programs/:id        — оновити {name?, start_date?, days?}
+DELETE /api/users/:userId/programs/:id        — видалити
+```
+
+### Program Session (in-gym actions)
+
+```
+PUT    /api/users/:userId/programs/:id/days/:dayId
+         — оновити день {day_note?, completed_at?}
+PUT    /api/users/:userId/programs/:id/days/:dayId/exercises/:exId
+         — оновити вправу {note?}
+PUT    /api/users/:userId/programs/:id/days/:dayId/exercises/:exId/sets/:setId
+         — оновити підхід {done?, weight?, reps?, count?}
+```
+
+### Exercise & Day History
+
+```
+GET    /api/users/:userId/programs/:programId/exercise-history?dayName=&exerciseName=
+         — коментарі до вправи з попередніх тренувань (last 3, cross-program)
+GET    /api/users/:userId/programs/:programId/day-history?dayName=
+         — коментарі до дня з попередніх тренувань (last 3, cross-program)
+```
+
+### Measurements
+
+```
+GET    /api/users/:userId/measurements        — список замірів (з entries)
+GET    /api/users/:userId/measurements/:id    — замір по id
+POST   /api/users/:userId/measurements        — створити {date?, weight?, notes?, entries?}
+DELETE /api/users/:userId/measurements/:id    — видалити
+```
+
+### Health
+
+```
+GET    /api/health             — {status, db}
 ```
 
 ---
@@ -247,11 +284,45 @@ GET/DELETE     /api/users/:userId/measurements/:id
 # База даних
 docker compose up -d
 
-# Міграції (перший раз)
-cd server && npm run migrate
+# Встановити залежності
+npm install
 
-# Сервер + клієнт одночасно (порти 3000 + 5173)
-npm run dev
+# Міграції (перший раз)
+npm run migrate
+
+# Development (server: tsx watch, client: vite dev)
+npm run dev:server   # порт 3000
+npm run dev:client   # порт 5173, proxy /api → 3000
+
+# Production build
+npm run build        # client build + server tsc
+npm run start        # node server/dist/index.js (serves client/dist as static)
 ```
 
-Відкрити `http://localhost:5173` у браузері.
+Відкрити `http://localhost:5173` у dev або `http://localhost:3000` у production.
+
+---
+
+## Майбутній розвиток (не реалізовано)
+
+### UX покращення
+
+- Порівняння тижнів (попередня програма + фідбек при створенні нової)
+- Drag & drop для зміни порядку вправ/днів
+- Швидке введення підходів з парсингом (`65 4x10`)
+- Підсумок тижня (загальний об'єм по м'язових групах)
+
+### Аналітика та прогрес
+
+- Графіки: динаміка ваги тіла, робочої ваги, тоннажу
+- Персональні рекорди (автоматичне відстеження)
+- Календар тренувань та стріки
+- Графіки обхватів тіла
+
+### Інфраструктура
+
+- Авторизація (PIN або OAuth)
+- Офлайн режим (IndexedDB + sync)
+- Експорт / імпорт (JSON)
+- PWA notifications (нагадування)
+- CI/CD (GitHub Actions → Render)

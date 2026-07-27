@@ -1,35 +1,42 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { useUserStore } from '@/stores/user'
-import { api } from '@/api'
+import { onMounted, ref } from 'vue';
+import { useUserStore } from '@/stores/user';
+import { api } from '@/api';
 
-const userStore = useUserStore()
-const measurements = ref<any[]>([])
-const showForm = ref(false)
+const userStore = useUserStore();
+const measurements = ref<any[]>([]);
+const showForm = ref(false);
 
 const form = ref({
   date: new Date().toISOString().split('T')[0],
   weight: null as number | null,
   notes: '',
   entries: [] as { type: string; value: number | null }[],
-})
+});
 
-const measurementTypes = ['Талія', 'Груди', 'Біцепс', 'Стегно', 'Шия']
+const measurementTypes = [
+  'Гомілка',
+  'Стегно',
+  'Сідниці',
+  'Талія',
+  'Груди',
+  'Плече/біцепс',
+];
 
 onMounted(async () => {
-  await loadMeasurements()
-})
+  await loadMeasurements();
+});
 
 async function loadMeasurements() {
-  measurements.value = await api.getMeasurements(userStore.currentUser!.id)
+  measurements.value = await api.getMeasurements(userStore.currentUser!.id);
 }
 
 function addEntry() {
-  form.value.entries.push({ type: '', value: null })
+  form.value.entries.push({ type: '', value: null });
 }
 
 function removeEntry(index: number) {
-  form.value.entries.splice(index, 1)
+  form.value.entries.splice(index, 1);
 }
 
 async function saveMeasurement() {
@@ -38,28 +45,28 @@ async function saveMeasurement() {
     weight: form.value.weight,
     notes: form.value.notes || null,
     entries: form.value.entries
-      .filter(e => e.type && e.value)
-      .map(e => ({ type: e.type, value: e.value })),
-  }
-  await api.createMeasurement(userStore.currentUser!.id, data)
+      .filter((e) => e.type && e.value)
+      .map((e) => ({ type: e.type, value: e.value })),
+  };
+  await api.createMeasurement(userStore.currentUser!.id, data);
   form.value = {
     date: new Date().toISOString().split('T')[0],
     weight: null,
     notes: '',
     entries: [],
-  }
-  showForm.value = false
-  await loadMeasurements()
+  };
+  showForm.value = false;
+  await loadMeasurements();
 }
 
 async function deleteMeasurement(id: number) {
-  if (!confirm('Видалити запис?')) return
-  await api.deleteMeasurement(userStore.currentUser!.id, id)
-  await loadMeasurements()
+  if (!confirm('Видалити запис?')) return;
+  await api.deleteMeasurement(userStore.currentUser!.id, id);
+  await loadMeasurements();
 }
 
 function formatDate(date: string) {
-  return new Date(date).toLocaleDateString('uk')
+  return new Date(date).toLocaleDateString('uk');
 }
 </script>
 
@@ -97,13 +104,19 @@ function formatDate(date: string) {
         </div>
       </div>
 
-      <div v-for="(entry, i) in form.entries" :key="i" class="flex gap-2 items-center">
+      <div
+        v-for="(entry, i) in form.entries"
+        :key="i"
+        class="flex gap-2 items-center"
+      >
         <select
           v-model="entry.type"
           class="flex-1 px-2 py-1.5 border rounded text-sm"
         >
           <option value="">Оберіть...</option>
-          <option v-for="t in measurementTypes" :key="t" :value="t">{{ t }}</option>
+          <option v-for="t in measurementTypes" :key="t" :value="t">
+            {{ t }}
+          </option>
         </select>
         <input
           v-model.number="entry.value"
@@ -112,10 +125,15 @@ function formatDate(date: string) {
           placeholder="см"
           class="w-20 px-2 py-1.5 border rounded text-sm"
         />
-        <button @click="removeEntry(i)" class="text-red-400 hover:text-red-600">✕</button>
+        <button @click="removeEntry(i)" class="text-red-400 hover:text-red-600">
+          ✕
+        </button>
       </div>
 
-      <button @click="addEntry" class="text-sm text-blue-500 hover:text-blue-700">
+      <button
+        @click="addEntry"
+        class="text-sm text-blue-500 hover:text-blue-700"
+      >
         + Додати замір
       </button>
 
@@ -134,7 +152,10 @@ function formatDate(date: string) {
       </button>
     </div>
 
-    <div v-if="measurements.length === 0" class="text-center text-gray-400 py-8">
+    <div
+      v-if="measurements.length === 0"
+      class="text-center text-gray-400 py-8"
+    >
       Поки немає замірів.
     </div>
 
@@ -146,13 +167,20 @@ function formatDate(date: string) {
       >
         <div class="flex items-center justify-between mb-1">
           <span class="font-medium">{{ formatDate(m.date) }}</span>
-          <button @click="deleteMeasurement(m.id)" class="text-red-400 hover:text-red-600 text-sm">✕</button>
+          <button
+            @click="deleteMeasurement(m.id)"
+            class="text-red-400 hover:text-red-600 text-sm"
+          >
+            ✕
+          </button>
         </div>
         <p v-if="m.weight" class="text-sm">Вага: {{ m.weight }} кг</p>
         <p v-for="e in m.entries" :key="e.id" class="text-sm text-gray-600">
           {{ e.type }}: {{ e.value }} см
         </p>
-        <p v-if="m.notes" class="text-xs text-gray-400 mt-1 italic">{{ m.notes }}</p>
+        <p v-if="m.notes" class="text-xs text-gray-400 mt-1 italic">
+          {{ m.notes }}
+        </p>
       </div>
     </div>
   </div>
