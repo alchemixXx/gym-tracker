@@ -308,6 +308,97 @@ programRoutes.put('/:userId/programs/:id', async (req, res) => {
   }
 });
 
+// POST /api/users/:userId/programs/:id/duplicate — duplicate program for next week
+programRoutes.post('/:userId/programs/:id/duplicate', async (req, res) => {
+  const { userId, id } = req.params;
+  const { name } = req.body;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Verify source program exists and belongs to user
+    const sourceResult = await client.query(
+      'SELECT * FROM programs WHERE id = $1 AND user_id = $2',
+      [id, userId],
+    );
+    if (sourceResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Program not found' });
+    }
+
+    const source = sourceResult.rows[0];
+    const newName = name?.trim() || `${source.name} (копія)`;
+
+    // Create new program
+    const programResult = await client.query(
+      'INSERT INTO programs (user_id, template_id, name, start_date) VALUES ($1, $2, $3, $4) RETURNING *',
+      [
+        userId,
+        source.template_id,
+        newName,
+        new Date().toISOString().split('T')[0],
+      ],
+    );
+    const newProgram = programResult.rows[0];
+
+    // Copy days
+    const daysResult = await client.query(
+      'SELECT * FROM program_days WHERE program_id = $1 ORDER BY sort_order',
+      [id],
+    );
+
+    const resultDays = [];
+    for (const day of daysResult.rows) {
+      const dayResult = await client.query(
+        'INSERT INTO program_days (program_id, name, sort_order) VALUES ($1, $2, $3) RETURNING *',
+        [newProgram.id, day.name, day.sort_order],
+      );
+      const newDay = dayResult.rows[0];
+
+      // Copy exercises (without notes — those are session-specific)
+      const exercisesResult = await client.query(
+        'SELECT * FROM program_exercises WHERE program_day_id = $1 ORDER BY sort_order',
+        [day.id],
+      );
+
+      const resultExercises = [];
+      for (const ex of exercisesResult.rows) {
+        const exResult = await client.query(
+          'INSERT INTO program_exercises (program_day_id, name, sort_order) VALUES ($1, $2, $3) RETURNING *',
+          [newDay.id, ex.name, ex.sort_order],
+        );
+        const newEx = exResult.rows[0];
+
+        // Copy sets (keep weight/reps/count, reset done to false)
+        const setsResult = await client.query(
+          'SELECT * FROM program_sets WHERE program_exercise_id = $1 ORDER BY sort_order',
+          [ex.id],
+        );
+
+        const resultSets = [];
+        for (const set of setsResult.rows) {
+          const setResult = await client.query(
+            'INSERT INTO program_sets (program_exercise_id, weight, reps, count, sort_order, done) VALUES ($1, $2, $3, $4, $5, false) RETURNING *',
+            [newEx.id, set.weight, set.reps, set.count, set.sort_order],
+          );
+          resultSets.push(setResult.rows[0]);
+        }
+        resultExercises.push({ ...newEx, sets: resultSets });
+      }
+      resultDays.push({ ...newDay, exercises: resultExercises });
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json({ ...newProgram, days: resultDays });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'Failed to duplicate program' });
+  } finally {
+    client.release();
+  }
+});
+
 // DELETE /api/users/:userId/programs/:id
 programRoutes.delete('/:userId/programs/:id', async (req, res) => {
   const { userId, id } = req.params;

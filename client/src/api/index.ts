@@ -56,6 +56,11 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
+  duplicateProgram: (userId: number, id: number, name?: string) =>
+    request<any>(`/users/${userId}/programs/${id}/duplicate`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
   deleteProgram: (userId: number, id: number) =>
     request<any>(`/users/${userId}/programs/${id}`, {
       method: 'DELETE',

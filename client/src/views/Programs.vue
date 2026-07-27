@@ -37,6 +37,20 @@ async function createProgram() {
   router.push(`/programs/${program.id}`);
 }
 
+async function duplicateProgram(id: number, currentName: string) {
+  const name = prompt(
+    'Назва нової програми:',
+    `${currentName} (наст. тиждень)`,
+  );
+  if (!name) return;
+  const program = await api.duplicateProgram(
+    userStore.currentUser!.id,
+    id,
+    name,
+  );
+  router.push(`/programs/${program.id}`);
+}
+
 async function deleteProgram(id: number) {
   if (!confirm('Видалити програму?')) return;
   await api.deleteProgram(userStore.currentUser!.id, id);
@@ -105,6 +119,13 @@ function formatDate(date: string | null) {
             <p class="text-xs text-gray-400">{{ formatDate(p.start_date) }}</p>
           </div>
           <div class="flex items-center gap-2">
+            <button
+              @click.prevent="duplicateProgram(p.id, p.name)"
+              class="text-blue-400 hover:text-blue-600 text-sm"
+              title="Копіювати"
+            >
+              ⧉
+            </button>
             <button
               @click.prevent="deleteProgram(p.id)"
               class="text-red-400 hover:text-red-600 text-sm"
