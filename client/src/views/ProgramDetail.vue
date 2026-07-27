@@ -11,6 +11,9 @@ const program = ref<any>(null);
 const editing = ref(false);
 const saving = ref(false);
 
+// Expanded days in view mode
+const expandedDays = ref<Record<number, boolean>>({});
+
 // Exercise history notes from past trainings
 const exerciseHistory = ref<Record<string, any[]>>({});
 const historyLoading = ref<Record<string, boolean>>({});
@@ -44,6 +47,10 @@ function dayProgress(day: any) {
 
 function startSession(dayId: number) {
   router.push(`/programs/${program.value.id}/session/${dayId}`);
+}
+
+function toggleDay(dayId: number) {
+  expandedDays.value[dayId] = !expandedDays.value[dayId];
 }
 
 // --- Edit mode ---
@@ -383,28 +390,82 @@ function formatHistoryDate(dateStr: string) {
         <div
           v-for="day in program.days"
           :key="day.id"
-          class="bg-white rounded-lg border p-3"
+          class="bg-white rounded-lg border overflow-hidden"
         >
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="font-medium">{{ day.name }}</p>
-              <p class="text-xs text-gray-400">
-                {{ dayProgress(day).doneSets }} /
-                {{ dayProgress(day).totalSets }} підходів
-                <span v-if="day.completed_at" class="text-green-500 ml-1"
-                  >✓</span
+          <div
+            class="p-3 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
+            @click="toggleDay(day.id)"
+          >
+            <div class="flex items-center gap-2">
+              <span
+                class="text-gray-400 text-xs transition-transform"
+                :class="{ 'rotate-90': expandedDays[day.id] }"
+                >▶</span
+              >
+              <div>
+                <p class="font-medium">{{ day.name }}</p>
+                <p class="text-xs text-gray-400">
+                  {{ dayProgress(day).doneSets }} /
+                  {{ dayProgress(day).totalSets }} підходів
+                  <span v-if="day.completed_at" class="text-green-500 ml-1"
+                    >✓</span
+                  >
+                </p>
+                <p
+                  v-if="day.day_note"
+                  class="text-xs text-gray-500 mt-1 italic"
                 >
-              </p>
-              <p v-if="day.day_note" class="text-xs text-gray-500 mt-1 italic">
-                {{ day.day_note }}
-              </p>
+                  {{ day.day_note }}
+                </p>
+              </div>
             </div>
             <button
-              @click="startSession(day.id)"
+              @click.stop="startSession(day.id)"
               class="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700"
             >
               {{ day.completed_at ? 'Переглянути' : 'Старт' }}
             </button>
+          </div>
+
+          <!-- Expanded exercise preview -->
+          <div
+            v-if="expandedDays[day.id]"
+            class="border-t px-3 pb-3 pt-2 bg-gray-50"
+          >
+            <div
+              v-if="day.exercises.length === 0"
+              class="text-xs text-gray-400 py-1"
+            >
+              Немає вправ
+            </div>
+            <div v-else class="space-y-2">
+              <div v-for="(ex, ei) in day.exercises" :key="ei" class="text-sm">
+                <div class="flex items-baseline gap-2">
+                  <span class="text-gray-400 text-xs">{{ ei + 1 }}.</span>
+                  <span class="font-medium text-gray-700">{{ ex.name }}</span>
+                </div>
+                <div v-if="ex.sets.length" class="ml-5 mt-0.5">
+                  <div
+                    v-for="(set, si) in ex.sets"
+                    :key="si"
+                    class="text-xs text-gray-500"
+                  >
+                    <span v-if="set.weight">{{ set.weight }} кг</span>
+                    <span v-else class="italic">без ваги</span>
+                    <span class="mx-1">—</span>
+                    <span v-if="set.count > 1">{{ set.count }} × </span
+                    >{{ set.reps }} повт
+                    <span v-if="set.done" class="text-green-500 ml-1">✓</span>
+                  </div>
+                </div>
+                <div
+                  v-if="ex.exercise_note"
+                  class="ml-5 mt-0.5 text-xs text-gray-500 italic"
+                >
+                  📝 {{ ex.exercise_note }}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
