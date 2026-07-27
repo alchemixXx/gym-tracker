@@ -1,10 +1,14 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { pool } from './db/pool.js';
 import { userRoutes } from './routes/users.js';
 import { templateRoutes } from './routes/templates.js';
 import { programRoutes } from './routes/programs.js';
 import { measurementRoutes } from './routes/measurements.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,6 +31,15 @@ app.get('/api/health', async (_req, res) => {
     res.status(500).json({ status: 'error', db: 'disconnected' });
   }
 });
+
+// Serve static frontend in production
+if (process.env.NODE_ENV === 'production') {
+  const clientDist = path.join(__dirname, '../../client/dist');
+  app.use(express.static(clientDist));
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+}
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
