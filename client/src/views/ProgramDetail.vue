@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { api } from '@/api';
@@ -10,6 +10,14 @@ const userStore = useUserStore();
 const program = ref<any>(null);
 const editing = ref(false);
 const saving = ref(false);
+
+// Exercise history notes from past trainings
+const exerciseHistory = ref<Record<string, any[]>>({});
+const historyLoading = ref<Record<string, boolean>>({});
+
+// Day history notes from past trainings
+const dayHistory = ref<Record<number, any[]>>({});
+const dayHistoryLoading = ref<Record<number, boolean>>({});
 
 onMounted(async () => {
   await loadProgram();
@@ -99,6 +107,73 @@ async function saveEdit() {
     saving.value = false;
   }
 }
+
+// --- Exercise history ---
+function historyKey(di: number, ei: number) {
+  return `${di}-${ei}`;
+}
+
+async function loadExerciseHistory(di: number, ei: number) {
+  const day = program.value.days[di];
+  const ex = day.exercises[ei];
+  if (!day.name?.trim() || !ex.name?.trim()) return;
+
+  const key = historyKey(di, ei);
+  historyLoading.value[key] = true;
+  try {
+    const history = await api.getExerciseHistory(
+      userStore.currentUser!.id,
+      program.value.id,
+      day.name.trim(),
+      ex.name.trim(),
+    );
+    exerciseHistory.value[key] = history;
+  } catch {
+    exerciseHistory.value[key] = [];
+  } finally {
+    historyLoading.value[key] = false;
+  }
+}
+
+// Load history for all exercises when entering edit mode
+watch(editing, async (isEditing) => {
+  if (isEditing && program.value) {
+    exerciseHistory.value = {};
+    dayHistory.value = {};
+    for (let di = 0; di < program.value.days.length; di++) {
+      loadDayHistory(di);
+      for (let ei = 0; ei < program.value.days[di].exercises.length; ei++) {
+        loadExerciseHistory(di, ei);
+      }
+    }
+  }
+});
+
+async function loadDayHistory(di: number) {
+  const day = program.value.days[di];
+  if (!day.name?.trim()) return;
+
+  dayHistoryLoading.value[di] = true;
+  try {
+    const history = await api.getDayHistory(
+      userStore.currentUser!.id,
+      program.value.id,
+      day.name.trim(),
+    );
+    dayHistory.value[di] = history;
+  } catch {
+    dayHistory.value[di] = [];
+  } finally {
+    dayHistoryLoading.value[di] = false;
+  }
+}
+
+function formatHistoryDate(dateStr: string) {
+  return new Date(dateStr).toLocaleDateString('uk', {
+    day: 'numeric',
+    month: 'short',
+  });
+}
 </script>
 
 <template>
@@ -134,6 +209,7 @@ async function saveEdit() {
             <input
               v-model="day.name"
               placeholder="Назва дня (напр. Спина-біцепс)"
+              @blur="loadDayHistory(di)"
               class="flex-1 font-medium px-2 py-1 border rounded focus:outline-none focus:border-blue-400"
             />
             <button
@@ -142,6 +218,32 @@ async function saveEdit() {
             >
               ✕
             </button>
+          </div>
+
+          <!-- Day history notes from past trainings -->
+          <div
+            v-if="dayHistory[di]?.length"
+            class="mb-3 bg-blue-50 border border-blue-200 rounded p-2"
+          >
+            <p class="text-xs font-medium text-blue-700 mb-1">
+              📋 Коментарі до дня з попередніх тренувань:
+            </p>
+            <div
+              v-for="(h, hi) in dayHistory[di]"
+              :key="hi"
+              class="text-xs text-gray-600 mb-1 last:mb-0"
+            >
+              <span class="text-blue-600 font-medium">{{
+                formatHistoryDate(h.completed_at)
+              }}</span>
+              <span class="text-gray-400 ml-1">({{ h.program_name }})</span>:
+              <span class="italic">{{ h.day_note }}</span>
+            </div>
+          </div>
+          <div v-else-if="dayHistoryLoading[di]" class="mb-3">
+            <span class="text-xs text-gray-400"
+              >Завантаження історії дня...</span
+            >
           </div>
 
           <div class="space-y-3 ml-2">
@@ -155,6 +257,7 @@ async function saveEdit() {
                 <input
                   v-model="ex.name"
                   placeholder="Вправа"
+                  @blur="loadExerciseHistory(di, ei)"
                   class="flex-1 px-2 py-1 text-sm border rounded focus:outline-none focus:border-blue-400"
                 />
                 <button
@@ -205,6 +308,36 @@ async function saveEdit() {
                 >
                   + підхід
                 </button>
+              </div>
+
+              <!-- History notes from past trainings -->
+              <div
+                v-if="exerciseHistory[historyKey(di, ei)]?.length"
+                class="ml-5 mt-2 bg-amber-50 border border-amber-200 rounded p-2"
+              >
+                <p class="text-xs font-medium text-amber-700 mb-1">
+                  📝 Коментарі з попередніх тренувань:
+                </p>
+                <div
+                  v-for="(h, hi) in exerciseHistory[historyKey(di, ei)]"
+                  :key="hi"
+                  class="text-xs text-gray-600 mb-1 last:mb-0"
+                >
+                  <span class="text-amber-600 font-medium">{{
+                    formatHistoryDate(h.completed_at)
+                  }}</span>
+                  <span class="text-gray-400 ml-1">({{ h.program_name }})</span
+                  >:
+                  <span class="italic">{{ h.exercise_note }}</span>
+                </div>
+              </div>
+              <div
+                v-else-if="historyLoading[historyKey(di, ei)]"
+                class="ml-5 mt-1"
+              >
+                <span class="text-xs text-gray-400"
+                  >Завантаження історії...</span
+                >
               </div>
             </div>
 

@@ -16,40 +16,50 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 export const api = {
   // Users
   getUsers: () => request<any[]>('/users'),
-  createUser: (name: string) => request<any>('/users', {
-    method: 'POST',
-    body: JSON.stringify({ name }),
-  }),
+  createUser: (name: string) =>
+    request<any>('/users', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
 
   // Templates
-  getTemplates: (userId: number) => request<any[]>(`/users/${userId}/templates`),
-  getTemplate: (userId: number, id: number) => request<any>(`/users/${userId}/templates/${id}`),
-  createTemplate: (userId: number, data: any) => request<any>(`/users/${userId}/templates`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  }),
-  updateTemplate: (userId: number, id: number, data: any) => request<any>(`/users/${userId}/templates/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  }),
-  deleteTemplate: (userId: number, id: number) => request<any>(`/users/${userId}/templates/${id}`, {
-    method: 'DELETE',
-  }),
+  getTemplates: (userId: number) =>
+    request<any[]>(`/users/${userId}/templates`),
+  getTemplate: (userId: number, id: number) =>
+    request<any>(`/users/${userId}/templates/${id}`),
+  createTemplate: (userId: number, data: any) =>
+    request<any>(`/users/${userId}/templates`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateTemplate: (userId: number, id: number, data: any) =>
+    request<any>(`/users/${userId}/templates/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteTemplate: (userId: number, id: number) =>
+    request<any>(`/users/${userId}/templates/${id}`, {
+      method: 'DELETE',
+    }),
 
   // Programs
   getPrograms: (userId: number) => request<any[]>(`/users/${userId}/programs`),
-  getProgram: (userId: number, id: number) => request<any>(`/users/${userId}/programs/${id}`),
-  createProgram: (userId: number, data: any) => request<any>(`/users/${userId}/programs`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  }),
-  updateProgram: (userId: number, id: number, data: any) => request<any>(`/users/${userId}/programs/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  }),
-  deleteProgram: (userId: number, id: number) => request<any>(`/users/${userId}/programs/${id}`, {
-    method: 'DELETE',
-  }),
+  getProgram: (userId: number, id: number) =>
+    request<any>(`/users/${userId}/programs/${id}`),
+  createProgram: (userId: number, data: any) =>
+    request<any>(`/users/${userId}/programs`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateProgram: (userId: number, id: number, data: any) =>
+    request<any>(`/users/${userId}/programs/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteProgram: (userId: number, id: number) =>
+    request<any>(`/users/${userId}/programs/${id}`, {
+      method: 'DELETE',
+    }),
 
   // Program session actions
   updateDay: (userId: number, programId: number, dayId: number, data: any) =>
@@ -57,24 +67,63 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
-  updateExercise: (userId: number, programId: number, dayId: number, exId: number, data: any) =>
-    request<any>(`/users/${userId}/programs/${programId}/days/${dayId}/exercises/${exId}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
-  updateSet: (userId: number, programId: number, dayId: number, exId: number, setId: number, data: any) =>
-    request<any>(`/users/${userId}/programs/${programId}/days/${dayId}/exercises/${exId}/sets/${setId}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
+  updateExercise: (
+    userId: number,
+    programId: number,
+    dayId: number,
+    exId: number,
+    data: any,
+  ) =>
+    request<any>(
+      `/users/${userId}/programs/${programId}/days/${dayId}/exercises/${exId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      },
+    ),
+  updateSet: (
+    userId: number,
+    programId: number,
+    dayId: number,
+    exId: number,
+    setId: number,
+    data: any,
+  ) =>
+    request<any>(
+      `/users/${userId}/programs/${programId}/days/${dayId}/exercises/${exId}/sets/${setId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      },
+    ),
+
+  // Exercise history (notes from past trainings)
+  getExerciseHistory: (
+    userId: number,
+    programId: number,
+    dayName: string,
+    exerciseName: string,
+  ) =>
+    request<any[]>(
+      `/users/${userId}/programs/${programId}/exercise-history?dayName=${encodeURIComponent(dayName)}&exerciseName=${encodeURIComponent(exerciseName)}`,
+    ),
+
+  // Day history (day_notes from past trainings)
+  getDayHistory: (userId: number, programId: number, dayName: string) =>
+    request<any[]>(
+      `/users/${userId}/programs/${programId}/day-history?dayName=${encodeURIComponent(dayName)}`,
+    ),
 
   // Measurements
-  getMeasurements: (userId: number) => request<any[]>(`/users/${userId}/measurements`),
-  createMeasurement: (userId: number, data: any) => request<any>(`/users/${userId}/measurements`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  }),
-  deleteMeasurement: (userId: number, id: number) => request<any>(`/users/${userId}/measurements/${id}`, {
-    method: 'DELETE',
-  }),
+  getMeasurements: (userId: number) =>
+    request<any[]>(`/users/${userId}/measurements`),
+  createMeasurement: (userId: number, data: any) =>
+    request<any>(`/users/${userId}/measurements`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  deleteMeasurement: (userId: number, id: number) =>
+    request<any>(`/users/${userId}/measurements/${id}`, {
+      method: 'DELETE',
+    }),
 };

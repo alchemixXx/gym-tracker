@@ -325,6 +325,78 @@ programRoutes.delete('/:userId/programs/:id', async (req, res) => {
   }
 });
 
+// GET /api/users/:userId/programs/:programId/exercise-history — get notes from last 3 trainings for same exercise+day
+programRoutes.get(
+  '/:userId/programs/:programId/exercise-history',
+  async (req, res) => {
+    const { userId, programId } = req.params;
+    const { dayName, exerciseName } = req.query;
+
+    if (!dayName || !exerciseName) {
+      return res
+        .status(400)
+        .json({ error: 'dayName and exerciseName are required' });
+    }
+
+    try {
+      // Find exercise notes from completed days with the same day name and exercise name
+      // across ALL user programs (excluding the current one), ordered by completion date
+      const result = await pool.query(
+        `SELECT pe.note AS exercise_note, pd.day_note, pd.completed_at, p.name AS program_name
+         FROM program_exercises pe
+         JOIN program_days pd ON pe.program_day_id = pd.id
+         JOIN programs p ON pd.program_id = p.id
+         WHERE p.user_id = $1
+           AND p.id != $2
+           AND LOWER(pd.name) = LOWER($3)
+           AND LOWER(pe.name) = LOWER($4)
+           AND pd.completed_at IS NOT NULL
+           AND (pe.note IS NOT NULL AND pe.note != '')
+         ORDER BY pd.completed_at DESC
+         LIMIT 3`,
+        [userId, programId, dayName, exerciseName],
+      );
+
+      res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch exercise history' });
+    }
+  },
+);
+
+// GET /api/users/:userId/programs/:programId/day-history — get day_notes from last 3 trainings for same day name
+programRoutes.get(
+  '/:userId/programs/:programId/day-history',
+  async (req, res) => {
+    const { userId, programId } = req.params;
+    const { dayName } = req.query;
+
+    if (!dayName) {
+      return res.status(400).json({ error: 'dayName is required' });
+    }
+
+    try {
+      const result = await pool.query(
+        `SELECT pd.day_note, pd.completed_at, p.name AS program_name
+         FROM program_days pd
+         JOIN programs p ON pd.program_id = p.id
+         WHERE p.user_id = $1
+           AND p.id != $2
+           AND LOWER(pd.name) = LOWER($3)
+           AND pd.completed_at IS NOT NULL
+           AND (pd.day_note IS NOT NULL AND pd.day_note != '')
+         ORDER BY pd.completed_at DESC
+         LIMIT 3`,
+        [userId, programId, dayName],
+      );
+
+      res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch day history' });
+    }
+  },
+);
+
 // PUT /api/users/:userId/programs/:id/days/:dayId — update day (note, completed)
 programRoutes.put(
   '/:userId/programs/:programId/days/:dayId',
