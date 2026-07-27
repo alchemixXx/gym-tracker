@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { useUserStore } from '@/stores/user'
-import UserSelect from '@/views/UserSelect.vue'
+import { useUserStore } from '@/stores/user';
+import UserSelect from '@/views/UserSelect.vue';
 
-const userStore = useUserStore()
+const userStore = useUserStore();
 </script>
 
 <template>
@@ -10,7 +10,9 @@ const userStore = useUserStore()
     <UserSelect v-if="!userStore.currentUser" />
     <template v-else>
       <header class="bg-white shadow-sm border-b sticky top-0 z-50">
-        <div class="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+        <div
+          class="max-w-lg mx-auto px-4 py-3 flex items-center justify-between"
+        >
           <h1 class="text-lg font-bold">Тренування</h1>
           <button
             @click="userStore.logout()"
@@ -48,8 +50,9 @@ export default {
         { to: '/programs', label: 'Програми' },
         { to: '/templates', label: 'Шаблони' },
         { to: '/measurements', label: 'Заміри' },
-      ]
-    }
-  }
-}
+        { to: '/food', label: 'Їжа' },
+      ];
+    },
+  },
+};
 </script>

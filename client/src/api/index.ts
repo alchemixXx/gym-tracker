@@ -131,4 +131,44 @@ export const api = {
     request<any>(`/users/${userId}/measurements/${id}`, {
       method: 'DELETE',
     }),
+
+  // Food items
+  getFoodItems: (userId: number) =>
+    request<any[]>(`/users/${userId}/food-items`),
+  createFoodItem: (userId: number, name: string) =>
+    request<any>(`/users/${userId}/food-items`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+  updateFoodItem: (userId: number, id: number, name: string) =>
+    request<any>(`/users/${userId}/food-items/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    }),
+  deleteFoodItem: (userId: number, id: number) =>
+    request<any>(`/users/${userId}/food-items/${id}`, {
+      method: 'DELETE',
+    }),
+
+  // Cooking batches
+  getBatches: (userId: number, foodItemId: number) =>
+    request<any[]>(`/users/${userId}/food-items/${foodItemId}/batches`),
+  createBatch: (
+    userId: number,
+    foodItemId: number,
+    data: { raw_weight: number; cooked_weight: number; notes?: string },
+  ) =>
+    request<any>(`/users/${userId}/food-items/${foodItemId}/batches`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  deleteBatch: (userId: number, foodItemId: number, batchId: number) =>
+    request<any>(
+      `/users/${userId}/food-items/${foodItemId}/batches/${batchId}`,
+      {
+        method: 'DELETE',
+      },
+    ),
+  getFoodRatio: (userId: number, foodItemId: number) =>
+    request<any>(`/users/${userId}/food-items/${foodItemId}/ratio`),
 };

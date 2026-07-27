@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory } from 'vue-router';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -37,7 +37,17 @@ const router = createRouter({
       name: 'measurements',
       component: () => import('@/views/Measurements.vue'),
     },
+    {
+      path: '/food',
+      name: 'food',
+      component: () => import('@/views/Food.vue'),
+    },
+    {
+      path: '/food/:id',
+      name: 'food-detail',
+      component: () => import('@/views/FoodDetail.vue'),
+    },
   ],
-})
+});
 
-export default router
+export default router;

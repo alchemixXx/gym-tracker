@@ -7,6 +7,7 @@ import { userRoutes } from './routes/users.js';
 import { templateRoutes } from './routes/templates.js';
 import { programRoutes } from './routes/programs.js';
 import { measurementRoutes } from './routes/measurements.js';
+import { foodRoutes } from './routes/food.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -21,6 +22,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/users', templateRoutes);
 app.use('/api/users', programRoutes);
 app.use('/api/users', measurementRoutes);
+app.use('/api/users', foodRoutes);
 
 // Health check
 app.get('/api/health', async (_req, res) => {
