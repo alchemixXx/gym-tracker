@@ -1,12 +1,44 @@
 <script setup lang="ts">
 import { useUserStore } from '@/stores/user';
+import { serverWaking } from '@/api';
 import UserSelect from '@/views/UserSelect.vue';
 
 const userStore = useUserStore();
 </script>
 
 <template>
-  <div class="min-h-screen">
+  <!-- Server waking overlay — covers the entire app -->
+  <div
+    v-if="serverWaking"
+    class="min-h-screen flex items-center justify-center p-4"
+  >
+    <div class="w-full max-w-sm text-center">
+      <div class="mb-6">
+        <div
+          class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600"
+        ></div>
+      </div>
+      <h1 class="text-2xl font-bold mb-3">Тренування 💪</h1>
+      <p class="text-gray-600 mb-2">Сервер запускається...</p>
+      <p class="text-sm text-gray-400">
+        Безкоштовний хостинг вимикає сервер після неактивності.
+        <br />Зазвичай це займає 30–60 секунд.
+      </p>
+      <div class="mt-6 flex justify-center gap-1">
+        <span
+          class="w-2 h-2 bg-blue-400 rounded-full animate-bounce [animation-delay:0ms]"
+        ></span>
+        <span
+          class="w-2 h-2 bg-blue-400 rounded-full animate-bounce [animation-delay:150ms]"
+        ></span>
+        <span
+          class="w-2 h-2 bg-blue-400 rounded-full animate-bounce [animation-delay:300ms]"
+        ></span>
+      </div>
+    </div>
+  </div>
+
+  <div v-else class="min-h-screen">
     <UserSelect v-if="!userStore.currentUser" />
     <template v-else>
       <header class="bg-white shadow-sm border-b sticky top-0 z-50">

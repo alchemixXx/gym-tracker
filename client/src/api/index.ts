@@ -1,15 +1,62 @@
+import { ref } from 'vue';
+
 const BASE_URL = '/api';
 
+/** Reactive flag: true while the server is cold-starting */
+export const serverWaking = ref(false);
+
+const MAX_RETRIES = 10;
+const RETRY_DELAY_MS = 3000;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isNetworkOrServerError(err: unknown, res?: Response): boolean {
+  if (!res) return true; // fetch threw — network error
+  return res.status === 502 || res.status === 503 || res.status === 504;
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${url}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.error || 'Request failed');
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    let res: Response | undefined;
+    try {
+      res = await fetch(`${BASE_URL}${url}`, {
+        headers: { 'Content-Type': 'application/json' },
+        ...options,
+      });
+
+      if (!isNetworkOrServerError(null, res)) {
+        // Server is alive — clear waking state
+        serverWaking.value = false;
+
+        if (!res.ok) {
+          const error = await res
+            .json()
+            .catch(() => ({ error: 'Request failed' }));
+          throw new Error(error.error || 'Request failed');
+        }
+        return res.json();
+      }
+    } catch (err) {
+      // Network error (server not reachable)
+      if (res && !isNetworkOrServerError(err, res)) {
+        throw err;
+      }
+      lastError = err;
+    }
+
+    // Server unavailable — mark as waking and retry
+    serverWaking.value = true;
+    if (attempt < MAX_RETRIES) {
+      await sleep(RETRY_DELAY_MS);
+    }
   }
-  return res.json();
+
+  serverWaking.value = false;
+  throw lastError || new Error('Server unavailable');
 }
 
 // Users
