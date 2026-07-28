@@ -6,6 +6,8 @@ import { api } from '@/api';
 const userStore = useUserStore();
 const measurements = ref<any[]>([]);
 const showForm = ref(false);
+const uploading = ref<number | null>(null); // measurement id currently uploading to
+const lightboxSrc = ref<string | null>(null);
 
 const form = ref({
   date: new Date().toISOString().split('T')[0],
@@ -63,6 +65,50 @@ async function deleteMeasurement(id: number) {
   if (!confirm('Видалити запис?')) return;
   await api.deleteMeasurement(userStore.currentUser!.id, id);
   await loadMeasurements();
+}
+
+// Photo handling
+async function handlePhotoUpload(measurementId: number, event: Event) {
+  const input = event.target as HTMLInputElement;
+  if (!input.files || input.files.length === 0) return;
+
+  uploading.value = measurementId;
+  try {
+    const files = Array.from(input.files);
+    await api.uploadMeasurementPhotos(
+      userStore.currentUser!.id,
+      measurementId,
+      files,
+    );
+    await loadMeasurements();
+  } catch (e) {
+    alert('Помилка при завантаженні фото');
+  } finally {
+    uploading.value = null;
+    input.value = '';
+  }
+}
+
+async function deletePhoto(measurementId: number, photoId: number) {
+  if (!confirm('Видалити фото?')) return;
+  await api.deleteMeasurementPhoto(
+    userStore.currentUser!.id,
+    measurementId,
+    photoId,
+  );
+  await loadMeasurements();
+}
+
+function photoUrl(filename: string) {
+  return `/api/uploads/${filename}`;
+}
+
+function openLightbox(filename: string) {
+  lightboxSrc.value = photoUrl(filename);
+}
+
+function closeLightbox() {
+  lightboxSrc.value = null;
 }
 
 function formatDate(date: string) {
@@ -243,7 +289,67 @@ function formatDiff(diff: number): string {
         <p v-if="m.notes" class="text-xs text-gray-400 mt-1 italic">
           {{ m.notes }}
         </p>
+
+        <!-- Photos section -->
+        <div class="mt-2">
+          <div
+            v-if="m.photos && m.photos.length > 0"
+            class="flex gap-2 flex-wrap mt-1"
+          >
+            <div
+              v-for="photo in m.photos"
+              :key="photo.id"
+              class="relative group"
+            >
+              <img
+                :src="photoUrl(photo.filename)"
+                :alt="photo.original_name"
+                class="w-16 h-16 object-cover rounded-lg cursor-pointer border hover:border-blue-400 transition-colors"
+                @click="openLightbox(photo.filename)"
+              />
+              <button
+                @click="deletePhoto(m.id, photo.id)"
+                class="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          <label
+            class="inline-flex items-center gap-1 mt-1 text-xs text-blue-500 hover:text-blue-700 cursor-pointer"
+          >
+            <span v-if="uploading === m.id">Завантаження...</span>
+            <span v-else>📷 Додати фото</span>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              class="hidden"
+              :disabled="uploading === m.id"
+              @change="handlePhotoUpload(m.id, $event)"
+            />
+          </label>
+        </div>
       </div>
+    </div>
+
+    <!-- Lightbox -->
+    <div
+      v-if="lightboxSrc"
+      class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+      @click="closeLightbox"
+    >
+      <img
+        :src="lightboxSrc"
+        class="max-w-full max-h-full rounded-lg"
+        @click.stop
+      />
+      <button
+        class="absolute top-4 right-4 text-white text-2xl hover:text-gray-300"
+        @click="closeLightbox"
+      >
+        ✕
+      </button>
     </div>
   </div>
 </template>

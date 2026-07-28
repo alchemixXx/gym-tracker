@@ -8,17 +8,21 @@ measurementRoutes.get('/:userId/measurements', async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT * FROM body_measurements WHERE user_id = $1 ORDER BY date DESC',
-      [req.params.userId]
+      [req.params.userId],
     );
 
-    // Fetch entries for each measurement
+    // Fetch entries and photos for each measurement
     const measurements = [];
     for (const m of result.rows) {
       const entries = await pool.query(
         'SELECT * FROM measurement_entries WHERE measurement_id = $1',
-        [m.id]
+        [m.id],
       );
-      measurements.push({ ...m, entries: entries.rows });
+      const photos = await pool.query(
+        'SELECT * FROM measurement_photos WHERE measurement_id = $1 ORDER BY created_at',
+        [m.id],
+      );
+      measurements.push({ ...m, entries: entries.rows, photos: photos.rows });
     }
 
     res.json(measurements);
@@ -33,7 +37,7 @@ measurementRoutes.get('/:userId/measurements/:id', async (req, res) => {
     const { userId, id } = req.params;
     const result = await pool.query(
       'SELECT * FROM body_measurements WHERE id = $1 AND user_id = $2',
-      [id, userId]
+      [id, userId],
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Measurement not found' });
@@ -41,7 +45,7 @@ measurementRoutes.get('/:userId/measurements/:id', async (req, res) => {
 
     const entries = await pool.query(
       'SELECT * FROM measurement_entries WHERE measurement_id = $1',
-      [id]
+      [id],
     );
 
     res.json({ ...result.rows[0], entries: entries.rows });
@@ -61,7 +65,12 @@ measurementRoutes.post('/:userId/measurements', async (req, res) => {
 
     const result = await client.query(
       'INSERT INTO body_measurements (user_id, date, weight, notes) VALUES ($1, $2, $3, $4) RETURNING *',
-      [userId, date || new Date().toISOString().split('T')[0], weight || null, notes || null]
+      [
+        userId,
+        date || new Date().toISOString().split('T')[0],
+        weight || null,
+        notes || null,
+      ],
     );
     const measurement = result.rows[0];
 
@@ -70,7 +79,7 @@ measurementRoutes.post('/:userId/measurements', async (req, res) => {
       for (const entry of entries) {
         const entryResult = await client.query(
           'INSERT INTO measurement_entries (measurement_id, type, value) VALUES ($1, $2, $3) RETURNING *',
-          [measurement.id, entry.type, entry.value]
+          [measurement.id, entry.type, entry.value],
         );
         savedEntries.push(entryResult.rows[0]);
       }
@@ -92,7 +101,7 @@ measurementRoutes.delete('/:userId/measurements/:id', async (req, res) => {
   try {
     const result = await pool.query(
       'DELETE FROM body_measurements WHERE id = $1 AND user_id = $2 RETURNING *',
-      [id, userId]
+      [id, userId],
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Measurement not found' });

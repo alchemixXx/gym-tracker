@@ -132,6 +132,39 @@ export const api = {
       method: 'DELETE',
     }),
 
+  // Measurement photos
+  uploadMeasurementPhotos: (
+    userId: number,
+    measurementId: number,
+    files: File[],
+  ) => {
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append('photos', file);
+    }
+    return fetch(
+      `${BASE_URL}/users/${userId}/measurements/${measurementId}/photos`,
+      {
+        method: 'POST',
+        body: formData,
+      },
+    ).then((res) => {
+      if (!res.ok) throw new Error('Upload failed');
+      return res.json();
+    });
+  },
+  deleteMeasurementPhoto: (
+    userId: number,
+    measurementId: number,
+    photoId: number,
+  ) =>
+    request<any>(
+      `/users/${userId}/measurements/${measurementId}/photos/${photoId}`,
+      {
+        method: 'DELETE',
+      },
+    ),
+
   // Food items
   getFoodItems: (userId: number) =>
     request<any[]>(`/users/${userId}/food-items`),
