@@ -99,12 +99,12 @@ async function deletePhoto(measurementId: number, photoId: number) {
   await loadMeasurements();
 }
 
-function photoUrl(filename: string) {
-  return `/api/uploads/${filename}`;
+function photoUrl(photoId: number) {
+  return `/api/photos/${photoId}/image`;
 }
 
-function openLightbox(filename: string) {
-  lightboxSrc.value = photoUrl(filename);
+function openLightbox(photoId: number) {
+  lightboxSrc.value = photoUrl(photoId);
 }
 
 function closeLightbox() {
@@ -302,10 +302,10 @@ function formatDiff(diff: number): string {
               class="relative group"
             >
               <img
-                :src="photoUrl(photo.filename)"
+                :src="photoUrl(photo.id)"
                 :alt="photo.original_name"
                 class="w-16 h-16 object-cover rounded-lg cursor-pointer border hover:border-blue-400 transition-colors"
-                @click="openLightbox(photo.filename)"
+                @click="openLightbox(photo.id)"
               />
               <button
                 @click="deletePhoto(m.id, photo.id)"
