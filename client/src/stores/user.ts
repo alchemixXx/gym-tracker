@@ -1,44 +1,75 @@
-import { defineStore } from 'pinia'
-import { ref } from 'vue'
-import { api } from '@/api'
-
-interface User {
-  id: number
-  name: string
-  created_at: string
-}
+import { defineStore } from 'pinia';
+import { ref, computed } from 'vue';
+import { authApi, type AuthUser } from '@/api';
 
 export const useUserStore = defineStore('user', () => {
-  const currentUser = ref<User | null>(null)
-  const users = ref<User[]>([])
+  const currentUser = ref<AuthUser | null>(null);
+  const loading = ref(false);
+  const initialized = ref(false);
 
-  // Restore from localStorage
-  const saved = localStorage.getItem('gym-tracker-user')
-  if (saved) {
+  const isAuthenticated = computed(() => !!currentUser.value);
+
+  /**
+   * Check auth state on app load by calling /auth/me.
+   * If cookie is valid, user is restored. Otherwise, stays null.
+   */
+  async function init() {
+    if (initialized.value) return;
+    loading.value = true;
     try {
-      currentUser.value = JSON.parse(saved)
-    } catch {}
+      const { user } = await authApi.me();
+      currentUser.value = user;
+    } catch {
+      currentUser.value = null;
+    } finally {
+      loading.value = false;
+      initialized.value = true;
+    }
   }
 
-  async function fetchUsers() {
-    users.value = await api.getUsers()
+  async function login(email: string, password: string) {
+    const { user } = await authApi.login(email, password);
+    currentUser.value = user;
   }
 
-  async function createUser(name: string) {
-    const user = await api.createUser(name)
-    users.value.push(user)
-    return user
+  async function register(name: string, email: string, password: string) {
+    const { user } = await authApi.register(name, email, password);
+    currentUser.value = user;
   }
 
-  function selectUser(user: User) {
-    currentUser.value = user
-    localStorage.setItem('gym-tracker-user', JSON.stringify(user))
+  async function claim(userId: number, email: string, password: string) {
+    const { user } = await authApi.claim(userId, email, password);
+    currentUser.value = user;
   }
 
-  function logout() {
-    currentUser.value = null
-    localStorage.removeItem('gym-tracker-user')
+  async function logout() {
+    try {
+      await authApi.logout();
+    } catch {
+      // Even if server call fails, clear local state
+    }
+    currentUser.value = null;
   }
 
-  return { currentUser, users, fetchUsers, createUser, selectUser, logout }
-})
+  async function forgotPassword(email: string) {
+    return authApi.forgotPassword(email);
+  }
+
+  async function resetPassword(token: string, password: string) {
+    return authApi.resetPassword(token, password);
+  }
+
+  return {
+    currentUser,
+    loading,
+    initialized,
+    isAuthenticated,
+    init,
+    login,
+    register,
+    claim,
+    logout,
+    forgotPassword,
+    resetPassword,
+  };
+});

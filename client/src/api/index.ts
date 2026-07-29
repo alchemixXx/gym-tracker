@@ -17,20 +17,80 @@ function isNetworkOrServerError(err: unknown, res?: Response): boolean {
   return res.status === 502 || res.status === 503 || res.status === 504;
 }
 
-async function request<T>(url: string, options?: RequestInit): Promise<T> {
+/** Flag to prevent multiple simultaneous refresh attempts */
+let isRefreshing = false;
+let refreshPromise: Promise<any> | null = null;
+
+async function attemptRefresh(): Promise<boolean> {
+  if (isRefreshing && refreshPromise) {
+    return refreshPromise.then(() => true).catch(() => false);
+  }
+
+  isRefreshing = true;
+  refreshPromise = fetch(`${BASE_URL}/auth/refresh`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  try {
+    const res = await refreshPromise;
+    if (res.ok) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  } finally {
+    isRefreshing = false;
+    refreshPromise = null;
+  }
+}
+
+async function request<T>(
+  url: string,
+  options?: RequestInit & { _skipAuthRedirect?: boolean },
+): Promise<T> {
   let lastError: unknown;
+  const skipAuthRedirect = options?._skipAuthRedirect ?? false;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     let res: Response | undefined;
     try {
       res = await fetch(`${BASE_URL}${url}`, {
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         ...options,
       });
 
       if (!isNetworkOrServerError(null, res)) {
         // Server is alive — clear waking state
         serverWaking.value = false;
+
+        // Handle 401 — try refresh once (skip for auth endpoints to avoid loops)
+        if (res.status === 401) {
+          if (skipAuthRedirect) {
+            const error = await res
+              .json()
+              .catch(() => ({ error: 'Not authenticated' }));
+            throw new Error(error.error || 'Not authenticated');
+          }
+
+          const refreshed = await attemptRefresh();
+          if (refreshed) {
+            // Retry the original request
+            const retryRes = await fetch(`${BASE_URL}${url}`, {
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              ...options,
+            });
+            if (retryRes.ok) {
+              return retryRes.json();
+            }
+          }
+          // Refresh failed — redirect to login
+          window.location.href = '/login';
+          throw new Error('Session expired');
+        }
 
         if (!res.ok) {
           const error = await res
@@ -59,16 +119,77 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   throw lastError || new Error('Server unavailable');
 }
 
-// Users
-export const api = {
-  // Users
-  getUsers: () => request<any[]>('/users'),
-  createUser: (name: string) =>
-    request<any>('/users', {
+// Auth
+export interface AuthUser {
+  id: number;
+  name: string;
+  email: string;
+}
+
+export interface UnclaimedUser {
+  id: number;
+  name: string;
+}
+
+export const authApi = {
+  login: (email: string, password: string) =>
+    request<{ user: AuthUser }>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ email, password }),
+      _skipAuthRedirect: true,
     }),
 
+  register: (name: string, email: string, password: string) =>
+    request<{ user: AuthUser }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ name, email, password }),
+      _skipAuthRedirect: true,
+    }),
+
+  claim: (userId: number, email: string, password: string) =>
+    request<{ user: AuthUser }>('/auth/claim', {
+      method: 'POST',
+      body: JSON.stringify({ userId, email, password }),
+      _skipAuthRedirect: true,
+    }),
+
+  logout: () =>
+    request<{ message: string }>('/auth/logout', {
+      method: 'POST',
+      _skipAuthRedirect: true,
+    }),
+
+  me: () =>
+    request<{ user: AuthUser }>('/auth/me', { _skipAuthRedirect: true }),
+
+  refresh: () =>
+    request<{ user: AuthUser }>('/auth/refresh', {
+      method: 'POST',
+      _skipAuthRedirect: true,
+    }),
+
+  getUnclaimedUsers: () =>
+    request<UnclaimedUser[]>('/auth/unclaimed-users', {
+      _skipAuthRedirect: true,
+    }),
+
+  forgotPassword: (email: string) =>
+    request<{ message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+      _skipAuthRedirect: true,
+    }),
+
+  resetPassword: (token: string, password: string) =>
+    request<{ message: string }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+      _skipAuthRedirect: true,
+    }),
+};
+
+// Data API (protected — cookies sent automatically)
+export const api = {
   // Templates
   getTemplates: (userId: number) =>
     request<any[]>(`/users/${userId}/templates`),
@@ -193,6 +314,7 @@ export const api = {
       `${BASE_URL}/users/${userId}/measurements/${measurementId}/photos`,
       {
         method: 'POST',
+        credentials: 'include',
         body: formData,
       },
     ).then((res) => {

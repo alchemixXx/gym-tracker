@@ -1,9 +1,22 @@
 <script setup lang="ts">
 import { useUserStore } from '@/stores/user';
 import { serverWaking } from '@/api';
-import UserSelect from '@/views/UserSelect.vue';
+import { useRouter } from 'vue-router';
 
 const userStore = useUserStore();
+const router = useRouter();
+
+const navLinks = [
+  { to: '/programs', label: 'Програми' },
+  { to: '/templates', label: 'Шаблони' },
+  { to: '/measurements', label: 'Заміри' },
+  { to: '/food', label: 'Їжа' },
+];
+
+async function handleLogout() {
+  await userStore.logout();
+  router.push('/login');
+}
 </script>
 
 <template>
@@ -39,18 +52,18 @@ const userStore = useUserStore();
   </div>
 
   <div v-else class="min-h-screen">
-    <UserSelect v-if="!userStore.currentUser" />
-    <template v-else>
+    <!-- Auth is handled by router guard — if user is here, they're authenticated -->
+    <template v-if="userStore.isAuthenticated">
       <header class="bg-white shadow-sm border-b sticky top-0 z-50">
         <div
           class="max-w-lg mx-auto px-4 py-3 flex items-center justify-between"
         >
           <h1 class="text-lg font-bold">Тренування</h1>
           <button
-            @click="userStore.logout()"
+            @click="handleLogout"
             class="text-sm text-gray-500 hover:text-gray-700"
           >
-            {{ userStore.currentUser.name }} ↗
+            {{ userStore.currentUser?.name }} ↗
           </button>
         </div>
       </header>
@@ -71,20 +84,8 @@ const userStore = useUserStore();
         <router-view />
       </main>
     </template>
+
+    <!-- Public pages (login, reset-password) render without header/nav -->
+    <router-view v-else />
   </div>
 </template>
-
-<script lang="ts">
-export default {
-  computed: {
-    navLinks() {
-      return [
-        { to: '/programs', label: 'Програми' },
-        { to: '/templates', label: 'Шаблони' },
-        { to: '/measurements', label: 'Заміри' },
-        { to: '/food', label: 'Їжа' },
-      ];
-    },
-  },
-};
-</script>
