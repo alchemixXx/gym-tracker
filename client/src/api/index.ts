@@ -108,6 +108,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ name }),
     }),
+  finishProgram: (userId: number, id: number) =>
+    request<any>(`/users/${userId}/programs/${id}/finish`, {
+      method: 'POST',
+    }),
   deleteProgram: (userId: number, id: number) =>
     request<any>(`/users/${userId}/programs/${id}`, {
       method: 'DELETE',

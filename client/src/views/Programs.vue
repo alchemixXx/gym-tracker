@@ -114,9 +114,26 @@ function formatDate(date: string | null) {
         class="block bg-white rounded-lg border p-3 hover:border-blue-400 hover:shadow-sm transition-all active:scale-[0.98]"
       >
         <div class="flex items-center justify-between">
-          <div>
-            <p class="font-medium text-gray-900">{{ p.name }}</p>
-            <p class="text-xs text-gray-400">{{ formatDate(p.start_date) }}</p>
+          <div class="flex items-center gap-2">
+            <span
+              v-if="p.status === 'completed'"
+              class="text-green-500 text-lg"
+              title="Завершена"
+              >✓</span
+            >
+            <span
+              v-else-if="p.status === 'active'"
+              class="text-blue-500 text-lg"
+              title="Активна"
+              >▶</span
+            >
+            <span v-else class="text-gray-400 text-lg" title="Очікує">◌</span>
+            <div>
+              <p class="font-medium text-gray-900">{{ p.name }}</p>
+              <p class="text-xs text-gray-400">
+                {{ formatDate(p.start_date) }}
+              </p>
+            </div>
           </div>
           <div class="flex items-center gap-2">
             <button

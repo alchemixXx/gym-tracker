@@ -100,9 +100,11 @@ function removeSet(dayIndex: number, exIndex: number, setIndex: number) {
 async function saveEdit() {
   saving.value = true;
   try {
+    // Only send non-completed days for update; completed days are preserved server-side
+    const editableDays = program.value.days.filter((d: any) => !d.completed_at);
     await api.updateProgram(userStore.currentUser!.id, program.value.id, {
       name: program.value.name,
-      days: program.value.days.map((d: any) => ({
+      days: editableDays.map((d: any) => ({
         name: d.name,
         exercises: d.exercises.map((e: any) => ({
           name: e.name,
@@ -187,6 +189,19 @@ function formatHistoryDate(dateStr: string) {
     month: 'short',
   });
 }
+
+const isCompleted = () => program.value?.status === 'completed';
+
+async function finishProgram() {
+  if (
+    !confirm(
+      'Завершити програму? Після цього вона стане доступною лише для перегляду.',
+    )
+  )
+    return;
+  await api.finishProgram(userStore.currentUser!.id, program.value.id);
+  await loadProgram();
+}
 </script>
 
 <template>
@@ -204,6 +219,21 @@ function formatHistoryDate(dateStr: string) {
         class="text-xl font-bold bg-transparent border-b border-blue-400 focus:outline-none flex-1"
       />
       <h2 v-else class="text-xl font-bold">{{ program.name }}</h2>
+      <span
+        v-if="!editing && isCompleted()"
+        class="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded"
+        >✓ Завершена</span
+      >
+      <span
+        v-else-if="!editing && program.status === 'active'"
+        class="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded"
+        >▶ Активна</span
+      >
+      <span
+        v-else-if="!editing && program.status === 'pending'"
+        class="ml-2 text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded"
+        >◌ Очікує</span
+      >
     </div>
 
     <p v-if="program.start_date && !editing" class="text-sm text-gray-400 mb-4">
@@ -216,151 +246,190 @@ function formatHistoryDate(dateStr: string) {
         <div
           v-for="(day, di) in program.days"
           :key="di"
-          class="bg-white rounded-lg border p-3"
+          class="rounded-lg border p-3"
+          :class="
+            day.completed_at
+              ? 'bg-green-50 border-green-200 opacity-80'
+              : 'bg-white'
+          "
         >
-          <div class="flex items-center gap-2 mb-3">
-            <input
-              v-model="day.name"
-              placeholder="Назва дня (напр. Спина-біцепс)"
-              @blur="loadDayHistory(di)"
-              class="flex-1 font-medium px-2 py-1 border rounded focus:outline-none focus:border-blue-400"
-            />
-            <button
-              @click="removeDay(di)"
-              class="text-red-400 hover:text-red-600 text-sm"
-            >
-              ✕
-            </button>
-          </div>
-
-          <!-- Day history notes from past trainings -->
-          <div
-            v-if="dayHistory[di]?.length"
-            class="mb-3 bg-blue-50 border border-blue-200 rounded p-2"
-          >
-            <p class="text-xs font-medium text-blue-700 mb-1">
-              📋 Коментарі до дня з попередніх тренувань:
-            </p>
-            <div
-              v-for="(h, hi) in dayHistory[di]"
-              :key="hi"
-              class="text-xs text-gray-600 mb-1 last:mb-0"
-            >
-              <span class="text-blue-600 font-medium">{{
-                formatHistoryDate(h.completed_at)
-              }}</span>
-              <span class="text-gray-400 ml-1">({{ h.program_name }})</span>:
-              <span class="italic">{{ h.day_note }}</span>
+          <!-- COMPLETED DAY — readonly -->
+          <template v-if="day.completed_at">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-green-500 text-sm">✓</span>
+              <p class="flex-1 font-medium text-gray-600">{{ day.name }}</p>
+              <span
+                class="text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded"
+                >Завершено</span
+              >
             </div>
-          </div>
-          <div v-else-if="dayHistoryLoading[di]" class="mb-3">
-            <span class="text-xs text-gray-400"
-              >Завантаження історії дня...</span
-            >
-          </div>
-
-          <div class="space-y-3 ml-2">
-            <div
-              v-for="(ex, ei) in day.exercises"
-              :key="ei"
-              class="border-l-2 border-gray-200 pl-3"
-            >
-              <div class="flex items-center gap-2 mb-1">
-                <span class="text-sm text-gray-400">{{ ei + 1 }}.</span>
-                <input
-                  v-model="ex.name"
-                  placeholder="Вправа"
-                  @blur="loadExerciseHistory(di, ei)"
-                  class="flex-1 px-2 py-1 text-sm border rounded focus:outline-none focus:border-blue-400"
-                />
-                <button
-                  @click="removeExercise(di, ei)"
-                  class="text-red-400 hover:text-red-600 text-xs"
+            <div class="space-y-1 ml-4">
+              <div
+                v-for="(ex, ei) in day.exercises"
+                :key="ei"
+                class="text-sm text-gray-500"
+              >
+                <span class="text-gray-400">{{ ei + 1 }}.</span> {{ ex.name }}
+                <span class="text-xs text-gray-400 ml-1"
+                  >({{ ex.sets.length }} підх.)</span
                 >
-                  ✕
-                </button>
               </div>
+            </div>
+            <p
+              v-if="day.day_note"
+              class="text-xs text-gray-500 mt-2 italic ml-4"
+            >
+              📝 {{ day.day_note }}
+            </p>
+          </template>
 
-              <div class="ml-5 space-y-1">
-                <div
-                  v-for="(set, si) in ex.sets"
-                  :key="si"
-                  class="flex items-center gap-1 text-sm"
-                >
+          <!-- NON-COMPLETED DAY — editable -->
+          <template v-else>
+            <div class="flex items-center gap-2 mb-3">
+              <input
+                v-model="day.name"
+                placeholder="Назва дня (напр. Спина-біцепс)"
+                @blur="loadDayHistory(di)"
+                class="flex-1 font-medium px-2 py-1 border rounded focus:outline-none focus:border-blue-400"
+              />
+              <button
+                @click="removeDay(di)"
+                class="text-red-400 hover:text-red-600 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <!-- Day history notes from past trainings -->
+            <div
+              v-if="dayHistory[di]?.length"
+              class="mb-3 bg-blue-50 border border-blue-200 rounded p-2"
+            >
+              <p class="text-xs font-medium text-blue-700 mb-1">
+                📋 Коментарі до дня з попередніх тренувань:
+              </p>
+              <div
+                v-for="(h, hi) in dayHistory[di]"
+                :key="hi"
+                class="text-xs text-gray-600 mb-1 last:mb-0"
+              >
+                <span class="text-blue-600 font-medium">{{
+                  formatHistoryDate(h.completed_at)
+                }}</span>
+                <span class="text-gray-400 ml-1">({{ h.program_name }})</span>:
+                <span class="italic">{{ h.day_note }}</span>
+              </div>
+            </div>
+            <div v-else-if="dayHistoryLoading[di]" class="mb-3">
+              <span class="text-xs text-gray-400"
+                >Завантаження історії дня...</span
+              >
+            </div>
+
+            <div class="space-y-3 ml-2">
+              <div
+                v-for="(ex, ei) in day.exercises"
+                :key="ei"
+                class="border-l-2 border-gray-200 pl-3"
+              >
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-sm text-gray-400">{{ ei + 1 }}.</span>
                   <input
-                    v-model.number="set.weight"
-                    placeholder="кг"
-                    type="number"
-                    step="0.5"
-                    class="w-16 px-1 py-0.5 border rounded text-center"
-                  />
-                  <span class="text-gray-400">кг</span>
-                  <input
-                    v-model.number="set.count"
-                    type="number"
-                    min="1"
-                    class="w-12 px-1 py-0.5 border rounded text-center"
-                  />
-                  <span class="text-gray-400">×</span>
-                  <input
-                    v-model.number="set.reps"
-                    type="number"
-                    min="1"
-                    class="w-12 px-1 py-0.5 border rounded text-center"
+                    v-model="ex.name"
+                    placeholder="Вправа"
+                    @blur="loadExerciseHistory(di, ei)"
+                    class="flex-1 px-2 py-1 text-sm border rounded focus:outline-none focus:border-blue-400"
                   />
                   <button
-                    @click="removeSet(di, ei, si)"
-                    class="text-red-300 hover:text-red-500 ml-1"
+                    @click="removeExercise(di, ei)"
+                    class="text-red-400 hover:text-red-600 text-xs"
                   >
                     ✕
                   </button>
                 </div>
-                <button
-                  @click="addSet(di, ei)"
-                  class="text-xs text-blue-500 hover:text-blue-700"
-                >
-                  + підхід
-                </button>
-              </div>
 
-              <!-- History notes from past trainings -->
-              <div
-                v-if="exerciseHistory[historyKey(di, ei)]?.length"
-                class="ml-5 mt-2 bg-amber-50 border border-amber-200 rounded p-2"
-              >
-                <p class="text-xs font-medium text-amber-700 mb-1">
-                  📝 Коментарі з попередніх тренувань:
-                </p>
+                <div class="ml-5 space-y-1">
+                  <div
+                    v-for="(set, si) in ex.sets"
+                    :key="si"
+                    class="flex items-center gap-1 text-sm"
+                  >
+                    <input
+                      v-model.number="set.weight"
+                      placeholder="кг"
+                      type="number"
+                      step="0.5"
+                      class="w-16 px-1 py-0.5 border rounded text-center"
+                    />
+                    <span class="text-gray-400">кг</span>
+                    <input
+                      v-model.number="set.count"
+                      type="number"
+                      min="1"
+                      class="w-12 px-1 py-0.5 border rounded text-center"
+                    />
+                    <span class="text-gray-400">×</span>
+                    <input
+                      v-model.number="set.reps"
+                      type="number"
+                      min="1"
+                      class="w-12 px-1 py-0.5 border rounded text-center"
+                    />
+                    <button
+                      @click="removeSet(di, ei, si)"
+                      class="text-red-300 hover:text-red-500 ml-1"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <button
+                    @click="addSet(di, ei)"
+                    class="text-xs text-blue-500 hover:text-blue-700"
+                  >
+                    + підхід
+                  </button>
+                </div>
+
+                <!-- History notes from past trainings -->
                 <div
-                  v-for="(h, hi) in exerciseHistory[historyKey(di, ei)]"
-                  :key="hi"
-                  class="text-xs text-gray-600 mb-1 last:mb-0"
+                  v-if="exerciseHistory[historyKey(di, ei)]?.length"
+                  class="ml-5 mt-2 bg-amber-50 border border-amber-200 rounded p-2"
                 >
-                  <span class="text-amber-600 font-medium">{{
-                    formatHistoryDate(h.completed_at)
-                  }}</span>
-                  <span class="text-gray-400 ml-1">({{ h.program_name }})</span
-                  >:
-                  <span class="italic">{{ h.exercise_note }}</span>
+                  <p class="text-xs font-medium text-amber-700 mb-1">
+                    📝 Коментарі з попередніх тренувань:
+                  </p>
+                  <div
+                    v-for="(h, hi) in exerciseHistory[historyKey(di, ei)]"
+                    :key="hi"
+                    class="text-xs text-gray-600 mb-1 last:mb-0"
+                  >
+                    <span class="text-amber-600 font-medium">{{
+                      formatHistoryDate(h.completed_at)
+                    }}</span>
+                    <span class="text-gray-400 ml-1"
+                      >({{ h.program_name }})</span
+                    >:
+                    <span class="italic">{{ h.exercise_note }}</span>
+                  </div>
+                </div>
+                <div
+                  v-else-if="historyLoading[historyKey(di, ei)]"
+                  class="ml-5 mt-1"
+                >
+                  <span class="text-xs text-gray-400"
+                    >Завантаження історії...</span
+                  >
                 </div>
               </div>
-              <div
-                v-else-if="historyLoading[historyKey(di, ei)]"
-                class="ml-5 mt-1"
-              >
-                <span class="text-xs text-gray-400"
-                  >Завантаження історії...</span
-                >
-              </div>
-            </div>
 
-            <button
-              @click="addExercise(di)"
-              class="text-sm text-blue-500 hover:text-blue-700"
-            >
-              + вправа
-            </button>
-          </div>
+              <button
+                @click="addExercise(di)"
+                class="text-sm text-blue-500 hover:text-blue-700"
+              >
+                + вправа
+              </button>
+            </div>
+          </template>
         </div>
       </div>
 
@@ -426,6 +495,7 @@ function formatHistoryDate(dateStr: string) {
               </div>
             </div>
             <button
+              v-if="!isCompleted()"
               @click.stop="startSession(day.id)"
               class="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700"
             >
@@ -483,12 +553,20 @@ function formatHistoryDate(dateStr: string) {
         Програма порожня. Натисніть "Редагувати" щоб додати дні.
       </div>
 
-      <div class="mt-4">
+      <div class="mt-4 space-y-2">
         <button
+          v-if="!isCompleted()"
           @click="enterEdit"
           class="w-full px-4 py-2.5 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50"
         >
           Редагувати програму
+        </button>
+        <button
+          v-if="!isCompleted()"
+          @click="finishProgram"
+          class="w-full px-4 py-2.5 border border-green-600 text-green-600 rounded-lg hover:bg-green-50"
+        >
+          ✓ Завершити програму
         </button>
       </div>
     </template>

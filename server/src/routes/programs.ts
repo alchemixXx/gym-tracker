@@ -208,14 +208,18 @@ programRoutes.put('/:userId/programs/:id', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Verify ownership
+    // Verify ownership and check status
     const check = await client.query(
-      'SELECT id FROM programs WHERE id = $1 AND user_id = $2',
+      'SELECT id, status FROM programs WHERE id = $1 AND user_id = $2',
       [id, userId],
     );
     if (check.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Program not found' });
+    }
+    if (check.rows[0].status === 'completed') {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Cannot edit a completed program' });
     }
 
     // Update meta fields
@@ -224,18 +228,27 @@ programRoutes.put('/:userId/programs/:id', async (req, res) => {
       [name, start_date, id],
     );
 
-    // Replace full structure if days provided
+    // Replace structure for non-completed days only; completed days are preserved
     if (days && Array.isArray(days)) {
-      // Delete old days (cascades to exercises and sets)
-      await client.query('DELETE FROM program_days WHERE program_id = $1', [
-        id,
-      ]);
+      // Delete only non-completed days (cascades to their exercises and sets)
+      await client.query(
+        'DELETE FROM program_days WHERE program_id = $1 AND completed_at IS NULL',
+        [id],
+      );
+
+      // Determine sort_order offset: completed days keep their positions,
+      // new days are appended after them
+      const completedDaysResult = await client.query(
+        'SELECT COUNT(*) as cnt FROM program_days WHERE program_id = $1',
+        [id],
+      );
+      const sortOffset = Number(completedDaysResult.rows[0].cnt);
 
       for (let di = 0; di < days.length; di++) {
         const day = days[di];
         const dayResult = await client.query(
           'INSERT INTO program_days (program_id, name, sort_order) VALUES ($1, $2, $3) RETURNING *',
-          [id, day.name, di],
+          [id, day.name, sortOffset + di],
         );
         const savedDay = dayResult.rows[0];
 
@@ -396,6 +409,26 @@ programRoutes.post('/:userId/programs/:id/duplicate', async (req, res) => {
     res.status(500).json({ error: 'Failed to duplicate program' });
   } finally {
     client.release();
+  }
+});
+
+// POST /api/users/:userId/programs/:id/finish — mark program as completed (readonly)
+programRoutes.post('/:userId/programs/:id/finish', async (req, res) => {
+  const { userId, id } = req.params;
+  try {
+    const result = await pool.query(
+      `UPDATE programs SET status = 'completed', updated_at = NOW()
+       WHERE id = $1 AND user_id = $2 AND status != 'completed' RETURNING *`,
+      [id, userId],
+    );
+    if (result.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ error: 'Program not found or already completed' });
+    }
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to finish program' });
   }
 });
 
