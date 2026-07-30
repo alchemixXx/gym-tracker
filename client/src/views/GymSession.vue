@@ -2,7 +2,7 @@
 import { onMounted, ref, computed, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
-import { api } from '@/api';
+import * as offlineApi from '@/db/offlineApi';
 
 const route = useRoute();
 const router = useRouter();
@@ -57,7 +57,7 @@ const ringOffset = computed(
 );
 
 onMounted(async () => {
-  program.value = await api.getProgram(userId.value, programId);
+  program.value = await offlineApi.getProgram(userId.value, programId);
   day.value = program.value.days.find((d: any) => d.id === dayId);
   if (day.value) {
     dayNote.value = day.value.day_note || '';
@@ -82,14 +82,21 @@ async function toggleSet(exercise: any, set: any) {
     showRestTimer.value = true;
     startRest(90);
   }
-  await api.updateSet(userId.value, programId, dayId, exercise.id, set.id, {
-    done: set.done,
-  });
+  await offlineApi.updateSet(
+    userId.value,
+    programId,
+    dayId,
+    exercise.id,
+    set.id,
+    {
+      done: set.done,
+    },
+  );
 }
 
 async function saveExerciseNote(exercise: any) {
   const note = exerciseNotes.value[exercise.id] || '';
-  await api.updateExercise(userId.value, programId, dayId, exercise.id, {
+  await offlineApi.updateExercise(userId.value, programId, dayId, exercise.id, {
     note,
   });
 }
@@ -99,7 +106,7 @@ async function finishSession() {
     alert('Додайте коментар до тренування');
     return;
   }
-  await api.updateDay(userId.value, programId, dayId, {
+  await offlineApi.updateDay(userId.value, programId, dayId, {
     day_note: dayNote.value.trim(),
     completed_at: new Date().toISOString(),
   });
@@ -220,32 +227,58 @@ function formatTime(seconds: number) {
       </div>
     </div>
 
-<!-- Rest Timer (floating) -->
-<transition name="slide-up">
-      <div v-if="showRestTimer && restTimer > 0" class="card p-4 mb-4 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50">
+    <!-- Rest Timer (floating) -->
+    <transition name="slide-up">
+      <div
+        v-if="showRestTimer && restTimer > 0"
+        class="card p-4 mb-4 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50"
+      >
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
+            <div
+              class="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center"
+            >
               <span class="text-lg">⏱</span>
             </div>
             <div>
-              <p class="text-sm font-medium text-blue-800 dark:text-blue-200">Відпочинок</p>
-              <p class="text-2xl font-bold text-blue-600 dark:text-blue-400 tabular-nums">{{ formatTime(restTimer) }}</p>
+              <p class="text-sm font-medium text-blue-800 dark:text-blue-200">
+                Відпочинок
+              </p>
+              <p
+                class="text-2xl font-bold text-blue-600 dark:text-blue-400 tabular-nums"
+              >
+                {{ formatTime(restTimer) }}
+              </p>
             </div>
           </div>
-          <button @click="stopRest" class="w-9 h-9 rounded-xl bg-blue-200 dark:bg-blue-800 hover:bg-blue-300 dark:hover:bg-blue-700 flex items-center justify-center transition-colors">
-            <svg class="w-4 h-4 text-blue-700 dark:text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          <button
+            @click="stopRest"
+            class="w-9 h-9 rounded-xl bg-blue-200 dark:bg-blue-800 hover:bg-blue-300 dark:hover:bg-blue-700 flex items-center justify-center transition-colors"
+          >
+            <svg
+              class="w-4 h-4 text-blue-700 dark:text-blue-300"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
       </div>
     </transition>
 
-<!-- Rest Timer presets (when not running) -->
-<transition name="slide-up">
+    <!-- Rest Timer presets (when not running) -->
+    <transition name="slide-up">
       <div v-if="showRestTimer && restTimer <= 0" class="card p-4 mb-4">
-        <p class="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Таймер відпочинку:</p>
+        <p class="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+          Таймер відпочинку:
+        </p>
         <div class="flex gap-2">
           <button
             v-for="preset in restPresets"
@@ -256,7 +289,10 @@ function formatTime(seconds: number) {
             {{ formatTime(preset) }}
           </button>
         </div>
-        <button @click="showRestTimer = false" class="w-full mt-2 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 py-1">
+        <button
+          @click="showRestTimer = false"
+          class="w-full mt-2 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 py-1"
+        >
           Сховати
         </button>
       </div>
@@ -269,8 +305,12 @@ function formatTime(seconds: number) {
         :key="exercise.id"
         class="card p-4"
       >
-        <p class="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-          <span class="w-6 h-6 rounded-lg bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-xs font-bold text-blue-600 dark:text-blue-400">
+        <p
+          class="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2"
+        >
+          <span
+            class="w-6 h-6 rounded-lg bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-xs font-bold text-blue-600 dark:text-blue-400"
+          >
             {{ ei + 1 }}
           </span>
           {{ exercise.name }}
@@ -282,24 +322,42 @@ function formatTime(seconds: number) {
             :key="set.id"
             @click="toggleSet(exercise, set)"
             class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-all duration-200 min-h-[48px] active:scale-[0.97]"
-            :class="set.done
-              ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-              : 'bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-750 border border-gray-200 dark:border-gray-700'"
+            :class="
+              set.done
+                ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                : 'bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-750 border border-gray-200 dark:border-gray-700'
+            "
           >
             <span
               class="w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition-all"
-              :class="set.done
-                ? 'bg-emerald-500 border-emerald-500 bounce-check'
-                : 'border-gray-300 dark:border-gray-600'"
+              :class="
+                set.done
+                  ? 'bg-emerald-500 border-emerald-500 bounce-check'
+                  : 'border-gray-300 dark:border-gray-600'
+              "
             >
-              <svg v-if="set.done" class="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+              <svg
+                v-if="set.done"
+                class="w-3.5 h-3.5 text-white"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                  clip-rule="evenodd"
+                />
               </svg>
             </span>
-            <span class="flex-1 text-left" :class="{ 'line-through opacity-60': set.done }">
+            <span
+              class="flex-1 text-left"
+              :class="{ 'line-through opacity-60': set.done }"
+            >
               {{ formatSet(set) }}
             </span>
-            <span class="text-xs text-gray-400 dark:text-gray-500">S{{ si + 1 }}</span>
+            <span class="text-xs text-gray-400 dark:text-gray-500"
+              >S{{ si + 1 }}</span
+            >
           </button>
         </div>
 
@@ -322,12 +380,13 @@ function formatTime(seconds: number) {
         rows="2"
         class="input text-sm !min-h-[60px] resize-none"
       ></textarea>
-      <button
-        @click="finishSession"
-        class="btn-success w-full gap-2 text-base"
-      >
+      <button @click="finishSession" class="btn-success w-full gap-2 text-base">
         <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+          <path
+            fill-rule="evenodd"
+            d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+            clip-rule="evenodd"
+          />
         </svg>
         Завершити тренування
       </button>

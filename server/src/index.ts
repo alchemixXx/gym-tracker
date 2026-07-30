@@ -9,6 +9,7 @@ import { programRoutes } from './routes/programs.js';
 import { measurementRoutes } from './routes/measurements.js';
 import { foodRoutes } from './routes/food.js';
 import { photoRoutes, photoImageRoutes } from './routes/photos.js';
+import { syncRoutes } from './routes/sync.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -25,6 +26,7 @@ app.use('/api/users', programRoutes);
 app.use('/api/users', measurementRoutes);
 app.use('/api/users', foodRoutes);
 app.use('/api/users', photoRoutes);
+app.use('/api/users', syncRoutes);
 
 // Serve photo images directly from DB
 app.use('/api/photos', photoImageRoutes);

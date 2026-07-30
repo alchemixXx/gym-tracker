@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
-import { api } from '@/api';
+import * as offlineApi from '@/db/offlineApi';
 
 const userStore = useUserStore();
 const router = useRouter();
@@ -17,12 +17,15 @@ onMounted(async () => {
 });
 
 async function loadItems() {
-  items.value = await api.getFoodItems(userStore.currentUser!.id);
+  items.value = await offlineApi.getFoodItems(userStore.currentUser!.id);
 }
 
 async function addItem() {
   if (!newName.value.trim()) return;
-  await api.createFoodItem(userStore.currentUser!.id, newName.value.trim());
+  await offlineApi.createFoodItem(
+    userStore.currentUser!.id,
+    newName.value.trim(),
+  );
   newName.value = '';
   showForm.value = false;
   await loadItems();
@@ -30,7 +33,7 @@ async function addItem() {
 
 async function deleteItem(id: number) {
   if (!confirm('Видалити продукт і всі його партії?')) return;
-  await api.deleteFoodItem(userStore.currentUser!.id, id);
+  await offlineApi.deleteFoodItem(userStore.currentUser!.id, id);
   await loadItems();
 }
 

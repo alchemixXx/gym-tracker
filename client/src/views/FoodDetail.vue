@@ -2,7 +2,7 @@
 import { onMounted, ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
-import { api } from '@/api';
+import * as offlineApi from '@/db/offlineApi';
 
 const route = useRoute();
 const router = useRouter();
@@ -44,14 +44,14 @@ onMounted(async () => {
 async function loadData() {
   const userId = userStore.currentUser!.id;
   [batches.value, ratioData.value] = await Promise.all([
-    api.getBatches(userId, foodItemId),
-    api.getFoodRatio(userId, foodItemId),
+    offlineApi.getBatches(userId, foodItemId),
+    offlineApi.getFoodRatio(userId, foodItemId),
   ]);
 }
 
 async function addBatch() {
   if (!form.value.raw_weight || !form.value.cooked_weight) return;
-  await api.createBatch(userStore.currentUser!.id, foodItemId, {
+  await offlineApi.createBatch(userStore.currentUser!.id, foodItemId, {
     raw_weight: form.value.raw_weight,
     cooked_weight: form.value.cooked_weight,
     notes: form.value.notes || undefined,
@@ -63,7 +63,7 @@ async function addBatch() {
 
 async function deleteBatch(batchId: number) {
   if (!confirm('Видалити партію?')) return;
-  await api.deleteBatch(userStore.currentUser!.id, foodItemId, batchId);
+  await offlineApi.deleteBatch(userStore.currentUser!.id, foodItemId, batchId);
   await loadData();
 }
 

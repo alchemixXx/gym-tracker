@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
-import { api } from '@/api';
+import * as offlineApi from '@/db/offlineApi';
 
 const route = useRoute();
 const router = useRouter();
@@ -15,7 +15,7 @@ onMounted(async () => {
 });
 
 async function loadTemplate() {
-  template.value = await api.getTemplate(
+  template.value = await offlineApi.getTemplate(
     userStore.currentUser!.id,
     Number(route.params.id),
   );
@@ -47,20 +47,24 @@ function removeSet(dayIndex: number, exIndex: number, setIndex: number) {
 async function save() {
   saving.value = true;
   try {
-    await api.updateTemplate(userStore.currentUser!.id, template.value.id, {
-      name: template.value.name,
-      days: template.value.days.map((d: any) => ({
-        name: d.name,
-        exercises: d.exercises.map((e: any) => ({
-          name: e.name,
-          sets: e.sets.map((s: any) => ({
-            weight: s.weight || null,
-            reps: Number(s.reps) || 10,
-            count: Number(s.count) || 1,
+    await offlineApi.updateTemplate(
+      userStore.currentUser!.id,
+      template.value.id,
+      {
+        name: template.value.name,
+        days: template.value.days.map((d: any) => ({
+          name: d.name,
+          exercises: d.exercises.map((e: any) => ({
+            name: e.name,
+            sets: e.sets.map((s: any) => ({
+              weight: s.weight || null,
+              reps: Number(s.reps) || 10,
+              count: Number(s.count) || 1,
+            })),
           })),
         })),
-      })),
-    });
+      },
+    );
     await loadTemplate();
   } finally {
     saving.value = false;
@@ -68,7 +72,7 @@ async function save() {
 }
 
 async function createProgram() {
-  const program = await api.createProgram(userStore.currentUser!.id, {
+  const program = await offlineApi.createProgram(userStore.currentUser!.id, {
     name: `${template.value.name} — ${new Date().toLocaleDateString('uk')}`,
     template_id: template.value.id,
   });

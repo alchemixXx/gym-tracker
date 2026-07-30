@@ -1,13 +1,23 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { useUserStore } from '@/stores/user';
 import { serverWaking } from '@/api';
 import { useRoute } from 'vue-router';
+import { useOnline } from '@/composables/useOnline';
+import {
+  pullAllData,
+  pushPendingChanges,
+  startAutoSync,
+  syncState,
+  pendingCount,
+} from '@/db/sync';
 import UserSelect from '@/views/UserSelect.vue';
 
 const userStore = useUserStore();
 const route = useRoute();
+const { isOnline } = useOnline();
 const darkMode = ref(false);
+const initialSyncing = ref(false);
 
 onMounted(() => {
   // Check system preference or stored preference
@@ -18,7 +28,46 @@ onMounted(() => {
     darkMode.value = window.matchMedia('(prefers-color-scheme: dark)').matches;
   }
   applyDarkMode();
+
+  // Start auto-sync background service
+  startAutoSync();
+
+  // If user already logged in and online, sync
+  if (userStore.currentUser && isOnline.value) {
+    triggerSync(userStore.currentUser.id);
+  }
 });
+
+// Watch for user login → trigger initial sync
+watch(
+  () => userStore.currentUser,
+  (user) => {
+    if (user && isOnline.value) {
+      triggerSync(user.id);
+    }
+  },
+);
+
+// Watch for coming back online → push + pull
+watch(isOnline, (online) => {
+  if (online && userStore.currentUser) {
+    pushPendingChanges()
+      .then(() => pullAllData(userStore.currentUser!.id))
+      .catch(console.error);
+  }
+});
+
+async function triggerSync(userId: number) {
+  initialSyncing.value = true;
+  try {
+    await pushPendingChanges();
+    await pullAllData(userId);
+  } catch (err) {
+    console.error('Initial sync failed:', err);
+  } finally {
+    initialSyncing.value = false;
+  }
+}
 
 function toggleDarkMode() {
   darkMode.value = !darkMode.value;
@@ -43,9 +92,9 @@ function isActive(path: string) {
 </script>
 
 <template>
-  <!-- Server waking overlay -->
+  <!-- Server waking overlay — only show if online and no local data -->
   <div
-    v-if="serverWaking"
+    v-if="serverWaking && isOnline"
     class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-950 dark:to-blue-950"
   >
     <div class="w-full max-w-sm text-center">
@@ -102,6 +151,48 @@ function isActive(path: string) {
             <h1 class="text-lg font-bold text-white">Тренування</h1>
           </div>
           <div class="flex items-center gap-2">
+            <!-- Offline / sync indicator -->
+            <div
+              v-if="!isOnline"
+              class="flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/20 text-amber-300 text-xs font-medium"
+              title="Офлайн — зміни збережуться локально"
+            >
+              <svg
+                class="w-3.5 h-3.5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M18.364 5.636a9 9 0 010 12.728M5.636 18.364a9 9 0 010-12.728M12 9v4m0 4h.01"
+                />
+              </svg>
+              <span>Офлайн</span>
+            </div>
+            <div
+              v-else-if="pendingCount > 0"
+              class="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/20 text-blue-300 text-xs font-medium"
+              title="Синхронізація..."
+            >
+              <svg
+                class="w-3.5 h-3.5 animate-spin"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+              <span>{{ pendingCount }}</span>
+            </div>
+
             <button
               @click="toggleDarkMode"
               class="w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"

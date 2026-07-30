@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
-import { api } from '@/api';
+import * as offlineApi from '@/db/offlineApi';
 
 const router = useRouter();
 const userStore = useUserStore();
@@ -17,12 +17,12 @@ onMounted(async () => {
 });
 
 async function loadTemplates() {
-  templates.value = await api.getTemplates(userStore.currentUser!.id);
+  templates.value = await offlineApi.getTemplates(userStore.currentUser!.id);
 }
 
 async function createTemplate() {
   if (!newName.value.trim()) return;
-  const template = await api.createTemplate(userStore.currentUser!.id, {
+  const template = await offlineApi.createTemplate(userStore.currentUser!.id, {
     name: newName.value.trim(),
     days: [],
   });
@@ -33,7 +33,7 @@ async function createTemplate() {
 
 async function deleteTemplate(id: number) {
   if (!confirm('Видалити шаблон?')) return;
-  await api.deleteTemplate(userStore.currentUser!.id, id);
+  await offlineApi.deleteTemplate(userStore.currentUser!.id, id);
   await loadTemplates();
 }
 </script>

@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue';
 import { useUserStore } from '@/stores/user';
+import * as offlineApi from '@/db/offlineApi';
 import { api } from '@/api';
+import { useOnline } from '@/composables/useOnline';
 
 const userStore = useUserStore();
+const { isOnline } = useOnline();
 const measurements = ref<any[]>([]);
 const showForm = ref(false);
 const uploading = ref<number | null>(null);
@@ -70,7 +73,9 @@ onMounted(async () => {
 });
 
 async function loadMeasurements() {
-  measurements.value = await api.getMeasurements(userStore.currentUser!.id);
+  measurements.value = await offlineApi.getMeasurements(
+    userStore.currentUser!.id,
+  );
 }
 
 function addEntry() {
@@ -89,7 +94,7 @@ async function saveMeasurement() {
       .filter((e) => e.type && e.value)
       .map((e) => ({ type: e.type, value: e.value })),
   };
-  await api.createMeasurement(userStore.currentUser!.id, data);
+  await offlineApi.createMeasurement(userStore.currentUser!.id, data);
   form.value = {
     date: new Date().toISOString().split('T')[0],
     weight: null,
@@ -102,7 +107,7 @@ async function saveMeasurement() {
 
 async function deleteMeasurement(id: number) {
   if (!confirm('Видалити запис?')) return;
-  await api.deleteMeasurement(userStore.currentUser!.id, id);
+  await offlineApi.deleteMeasurement(userStore.currentUser!.id, id);
   await loadMeasurements();
 }
 

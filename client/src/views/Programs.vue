@@ -2,7 +2,7 @@
 import { onMounted, ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
-import { api } from '@/api';
+import * as offlineApi from '@/db/offlineApi';
 
 const router = useRouter();
 const userStore = useUserStore();
@@ -15,12 +15,12 @@ const loading = ref(true);
 
 onMounted(async () => {
   await loadPrograms();
-  templates.value = await api.getTemplates(userStore.currentUser!.id);
+  templates.value = await offlineApi.getTemplates(userStore.currentUser!.id);
   loading.value = false;
 });
 
 async function loadPrograms() {
-  programs.value = await api.getPrograms(userStore.currentUser!.id);
+  programs.value = await offlineApi.getPrograms(userStore.currentUser!.id);
 }
 
 async function createProgram() {
@@ -32,7 +32,10 @@ async function createProgram() {
   if (selectedTemplate.value) {
     data.template_id = selectedTemplate.value;
   }
-  const program = await api.createProgram(userStore.currentUser!.id, data);
+  const program = await offlineApi.createProgram(
+    userStore.currentUser!.id,
+    data,
+  );
   newName.value = '';
   showCreate.value = false;
   selectedTemplate.value = null;
@@ -45,7 +48,7 @@ async function duplicateProgram(id: number, currentName: string) {
     `${currentName} (наст. тиждень)`,
   );
   if (!name) return;
-  const program = await api.duplicateProgram(
+  const program = await offlineApi.duplicateProgram(
     userStore.currentUser!.id,
     id,
     name,
@@ -55,7 +58,7 @@ async function duplicateProgram(id: number, currentName: string) {
 
 async function deleteProgram(id: number) {
   if (!confirm('Видалити програму?')) return;
-  await api.deleteProgram(userStore.currentUser!.id, id);
+  await offlineApi.deleteProgram(userStore.currentUser!.id, id);
   await loadPrograms();
 }
 
