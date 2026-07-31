@@ -124,6 +124,7 @@ export type SyncAction =
   | 'deleteProgram'
   | 'duplicateProgram'
   | 'finishProgram'
+  | 'importProgram'
   | 'updateDay'
   | 'updateExercise'
   | 'updateSet'

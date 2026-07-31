@@ -516,6 +516,81 @@ export async function getFoodRatio(userId: number, foodItemId: number) {
   };
 }
 
+// ─── Program Import/Export ────────────────────────────────────────────────────
+
+export async function exportProgram(userId: number, programId: number) {
+  const program = await db.programs.get(programId);
+  if (!program || program.user_id !== userId) return null;
+
+  return {
+    version: 1,
+    exported_at: new Date().toISOString(),
+    program: {
+      name: program.name,
+      status: program.status,
+      start_date: program.start_date,
+      created_at: program.created_at,
+      days: program.days.map((d) => ({
+        name: d.name,
+        day_note: d.day_note || null,
+        completed_at: d.completed_at || null,
+        exercises: d.exercises.map((e) => ({
+          name: e.name,
+          note: e.note || null,
+          sets: e.sets.map((s) => ({
+            weight: s.weight,
+            reps: s.reps,
+            count: s.count,
+            done: s.done,
+          })),
+        })),
+      })),
+    },
+  };
+}
+
+export async function importProgram(userId: number, importData: any) {
+  const programData = importData.program || importData;
+  if (!programData || !programData.name) return null;
+
+  const now = new Date().toISOString();
+  const program: DbProgram = {
+    id: nextTempId(),
+    user_id: userId,
+    template_id: null,
+    name: programData.name,
+    status: 'active',
+    start_date: new Date().toISOString().split('T')[0],
+    created_at: now,
+    updated_at: now,
+    days: (programData.days || []).map((d: any, di: number) => ({
+      id: nextTempId(),
+      name: d.name,
+      sort_order: di,
+      day_note: d.day_note || null,
+      completed_at: null,
+      exercises: (d.exercises || []).map((e: any, ei: number) => ({
+        id: nextTempId(),
+        name: e.name,
+        sort_order: ei,
+        note: e.note || null,
+        sets: (e.sets || []).map((s: any, si: number) => ({
+          id: nextTempId(),
+          weight: s.weight || null,
+          reps: s.reps || 10,
+          count: s.count || 1,
+          done: false,
+          sort_order: si,
+        })),
+      })),
+    })),
+  };
+
+  await db.programs.add(program);
+  await enqueue('importProgram', { userId, data: { program: programData } });
+  return program;
+}
+
 // ─── Exercise/Day History (read from local programs) ─────────────────────────
 
 export async function getExerciseHistory(

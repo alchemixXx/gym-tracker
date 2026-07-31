@@ -112,6 +112,13 @@ export const api = {
     request<any>(`/users/${userId}/programs/${id}/finish`, {
       method: 'POST',
     }),
+  exportProgram: (userId: number, id: number) =>
+    request<any>(`/users/${userId}/programs/${id}/export`),
+  importProgram: (userId: number, data: any) =>
+    request<any>(`/users/${userId}/programs/import`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   deleteProgram: (userId: number, id: number) =>
     request<any>(`/users/${userId}/programs/${id}`, {
       method: 'DELETE',

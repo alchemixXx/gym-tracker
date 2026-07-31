@@ -190,6 +190,22 @@ async function finishProgram() {
   await offlineApi.finishProgram(userStore.currentUser!.id, program.value.id);
   await loadProgram();
 }
+
+async function exportProgram() {
+  const data = await offlineApi.exportProgram(
+    userStore.currentUser!.id,
+    program.value.id,
+  );
+  if (!data) return;
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${program.value.name.replace(/[^a-zA-Zа-яА-ЯіІїЇєЄґҐ0-9\s-]/g, '').trim()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 </script>
 
 <template>
@@ -739,6 +755,22 @@ async function finishProgram() {
             />
           </svg>
           Завершити програму
+        </button>
+        <button @click="exportProgram" class="btn-secondary w-full gap-2">
+          <svg
+            class="w-5 h-5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+            />
+          </svg>
+          Експортувати програму
         </button>
       </div>
     </div>

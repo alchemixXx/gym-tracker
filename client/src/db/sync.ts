@@ -35,37 +35,52 @@ export async function pullAllData(userId: number): Promise<void> {
     const data = await response.json();
 
     // Replace local data for this user in a transaction
-    await db.transaction('rw', [
-      db.users,
-      db.templates,
-      db.programs,
-      db.measurements,
-      db.foodItems,
-      db.cookingBatches,
-      db.syncMeta,
-    ], async () => {
-      // Clear user-specific data
-      await db.templates.where('user_id').equals(userId).delete();
-      await db.programs.where('user_id').equals(userId).delete();
-      await db.measurements.where('user_id').equals(userId).delete();
+    await db.transaction(
+      'rw',
+      [
+        db.users,
+        db.templates,
+        db.programs,
+        db.measurements,
+        db.foodItems,
+        db.cookingBatches,
+        db.syncMeta,
+      ],
+      async () => {
+        // Clear user-specific data
+        await db.templates.where('user_id').equals(userId).delete();
+        await db.programs.where('user_id').equals(userId).delete();
+        await db.measurements.where('user_id').equals(userId).delete();
 
-      // Food items & batches: delete batches for this user's food items first
-      const userFoodItems = await db.foodItems.where('user_id').equals(userId).toArray();
-      for (const item of userFoodItems) {
-        await db.cookingBatches.where('food_item_id').equals(item.id).delete();
-      }
-      await db.foodItems.where('user_id').equals(userId).delete();
+        // Food items & batches: delete batches for this user's food items first
+        const userFoodItems = await db.foodItems
+          .where('user_id')
+          .equals(userId)
+          .toArray();
+        for (const item of userFoodItems) {
+          await db.cookingBatches
+            .where('food_item_id')
+            .equals(item.id)
+            .delete();
+        }
+        await db.foodItems.where('user_id').equals(userId).delete();
 
-      // Store fresh data
-      if (data.templates?.length) await db.templates.bulkPut(data.templates);
-      if (data.programs?.length) await db.programs.bulkPut(data.programs);
-      if (data.measurements?.length) await db.measurements.bulkPut(data.measurements);
-      if (data.foodItems?.length) await db.foodItems.bulkPut(data.foodItems);
-      if (data.cookingBatches?.length) await db.cookingBatches.bulkPut(data.cookingBatches);
+        // Store fresh data
+        if (data.templates?.length) await db.templates.bulkPut(data.templates);
+        if (data.programs?.length) await db.programs.bulkPut(data.programs);
+        if (data.measurements?.length)
+          await db.measurements.bulkPut(data.measurements);
+        if (data.foodItems?.length) await db.foodItems.bulkPut(data.foodItems);
+        if (data.cookingBatches?.length)
+          await db.cookingBatches.bulkPut(data.cookingBatches);
 
-      // Update sync timestamp
-      await db.syncMeta.put({ key: `lastSync_${userId}`, value: new Date().toISOString() });
-    });
+        // Update sync timestamp
+        await db.syncMeta.put({
+          key: `lastSync_${userId}`,
+          value: new Date().toISOString(),
+        });
+      },
+    );
 
     lastSyncAt.value = new Date().toISOString();
     syncState.value = 'idle';
@@ -137,16 +152,32 @@ async function replayAction(item: DbSyncQueueItem): Promise<void> {
     case 'finishProgram':
       await api.finishProgram(p.userId, p.programId);
       break;
+    case 'importProgram':
+      await api.importProgram(p.userId, p.data);
+      break;
 
     // Program session
     case 'updateDay':
       await api.updateDay(p.userId, p.programId, p.dayId, p.data);
       break;
     case 'updateExercise':
-      await api.updateExercise(p.userId, p.programId, p.dayId, p.exerciseId, p.data);
+      await api.updateExercise(
+        p.userId,
+        p.programId,
+        p.dayId,
+        p.exerciseId,
+        p.data,
+      );
       break;
     case 'updateSet':
-      await api.updateSet(p.userId, p.programId, p.dayId, p.exerciseId, p.setId, p.data);
+      await api.updateSet(
+        p.userId,
+        p.programId,
+        p.dayId,
+        p.exerciseId,
+        p.setId,
+        p.data,
+      );
       break;
 
     // Measurements

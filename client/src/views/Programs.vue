@@ -83,32 +83,89 @@ const pendingPrograms = computed(() =>
     (p) => p.status !== 'active' && p.status !== 'completed',
   ),
 );
+
+const importInput = ref<HTMLInputElement | null>(null);
+
+function triggerImport() {
+  importInput.value?.click();
+}
+
+async function handleImportFile(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    const program = await offlineApi.importProgram(
+      userStore.currentUser!.id,
+      data,
+    );
+    if (program) {
+      router.push(`/programs/${program.id}`);
+    }
+  } catch (e) {
+    alert('Не вдалося імпортувати програму. Перевірте формат файлу.');
+  } finally {
+    input.value = '';
+  }
+}
 </script>
 
 <template>
   <div>
     <div class="flex items-center justify-between mb-6">
       <h2 class="text-2xl font-bold dark:text-white">Програми</h2>
-      <button
-        @click="showCreate = !showCreate"
-        class="btn-primary btn-sm !rounded-xl gap-1"
-      >
-        <svg
-          class="w-4 h-4"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          stroke-width="2.5"
+      <div class="flex items-center gap-2">
+        <button
+          @click="triggerImport"
+          class="btn-secondary btn-sm !rounded-xl gap-1"
         >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M12 4v16m8-8H4"
-          />
-        </svg>
-        Нова
-      </button>
+          <svg
+            class="w-4 h-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2.5"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+            />
+          </svg>
+          Імпорт
+        </button>
+        <button
+          @click="showCreate = !showCreate"
+          class="btn-primary btn-sm !rounded-xl gap-1"
+        >
+          <svg
+            class="w-4 h-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2.5"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M12 4v16m8-8H4"
+            />
+          </svg>
+          Нова
+        </button>
+      </div>
     </div>
+
+    <input
+      ref="importInput"
+      type="file"
+      accept=".json"
+      class="hidden"
+      @change="handleImportFile"
+    />
 
     <!-- Create form -->
     <transition name="slide-down">

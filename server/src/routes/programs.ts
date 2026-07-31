@@ -412,6 +412,150 @@ programRoutes.post('/:userId/programs/:id/duplicate', async (req, res) => {
   }
 });
 
+// GET /api/users/:userId/programs/:id/export — export program as shareable JSON
+programRoutes.get('/:userId/programs/:id/export', async (req, res) => {
+  try {
+    const { userId, id } = req.params;
+
+    const programResult = await pool.query(
+      'SELECT * FROM programs WHERE id = $1 AND user_id = $2',
+      [id, userId],
+    );
+    if (programResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Program not found' });
+    }
+
+    const program = programResult.rows[0];
+
+    const daysResult = await pool.query(
+      'SELECT * FROM program_days WHERE program_id = $1 ORDER BY sort_order',
+      [id],
+    );
+
+    const days = [];
+    for (const day of daysResult.rows) {
+      const exercisesResult = await pool.query(
+        'SELECT * FROM program_exercises WHERE program_day_id = $1 ORDER BY sort_order',
+        [day.id],
+      );
+
+      const exercises = [];
+      for (const exercise of exercisesResult.rows) {
+        const setsResult = await pool.query(
+          'SELECT * FROM program_sets WHERE program_exercise_id = $1 ORDER BY sort_order',
+          [exercise.id],
+        );
+        exercises.push({
+          name: exercise.name,
+          note: exercise.note || null,
+          sets: setsResult.rows.map((s: any) => ({
+            weight: s.weight,
+            reps: s.reps,
+            count: s.count,
+            done: s.done,
+          })),
+        });
+      }
+      days.push({
+        name: day.name,
+        day_note: day.day_note || null,
+        completed_at: day.completed_at || null,
+        exercises,
+      });
+    }
+
+    const exportData = {
+      version: 1,
+      exported_at: new Date().toISOString(),
+      program: {
+        name: program.name,
+        status: program.status,
+        start_date: program.start_date,
+        created_at: program.created_at,
+        days,
+      },
+    };
+
+    res.json(exportData);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to export program' });
+  }
+});
+
+// POST /api/users/:userId/programs/import — import program from JSON
+programRoutes.post('/:userId/programs/import', async (req, res) => {
+  const { userId } = req.params;
+  const { program: programData } = req.body;
+
+  if (!programData || !programData.name) {
+    return res.status(400).json({ error: 'Invalid import data' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const programResult = await client.query(
+      'INSERT INTO programs (user_id, name, start_date) VALUES ($1, $2, $3) RETURNING *',
+      [userId, programData.name.trim(), new Date().toISOString().split('T')[0]],
+    );
+    const program = programResult.rows[0];
+
+    const resultDays = [];
+    if (programData.days && Array.isArray(programData.days)) {
+      for (let di = 0; di < programData.days.length; di++) {
+        const day = programData.days[di];
+        const dayResult = await client.query(
+          'INSERT INTO program_days (program_id, name, sort_order, day_note) VALUES ($1, $2, $3, $4) RETURNING *',
+          [program.id, day.name, di, day.day_note || null],
+        );
+        const savedDay = dayResult.rows[0];
+
+        const resultExercises = [];
+        if (day.exercises && Array.isArray(day.exercises)) {
+          for (let ei = 0; ei < day.exercises.length; ei++) {
+            const exercise = day.exercises[ei];
+            const exResult = await client.query(
+              'INSERT INTO program_exercises (program_day_id, name, sort_order, note) VALUES ($1, $2, $3, $4) RETURNING *',
+              [savedDay.id, exercise.name, ei, exercise.note || null],
+            );
+            const savedExercise = exResult.rows[0];
+
+            const resultSets = [];
+            if (exercise.sets && Array.isArray(exercise.sets)) {
+              for (let si = 0; si < exercise.sets.length; si++) {
+                const set = exercise.sets[si];
+                const setResult = await client.query(
+                  'INSERT INTO program_sets (program_exercise_id, weight, reps, count, sort_order, done) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+                  [
+                    savedExercise.id,
+                    set.weight || null,
+                    set.reps || 10,
+                    set.count || 1,
+                    si,
+                    false,
+                  ],
+                );
+                resultSets.push(setResult.rows[0]);
+              }
+            }
+            resultExercises.push({ ...savedExercise, sets: resultSets });
+          }
+        }
+        resultDays.push({ ...savedDay, exercises: resultExercises });
+      }
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json({ ...program, days: resultDays });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'Failed to import program' });
+  } finally {
+    client.release();
+  }
+});
+
 // POST /api/users/:userId/programs/:id/finish — mark program as completed (readonly)
 programRoutes.post('/:userId/programs/:id/finish', async (req, res) => {
   const { userId, id } = req.params;
