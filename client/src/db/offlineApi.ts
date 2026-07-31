@@ -1,4 +1,11 @@
-import { db, type DbProgram, type DbTemplate, type DbMeasurement, type DbFoodItem, type DbCookingBatch } from './index';
+import {
+  db,
+  type DbProgram,
+  type DbTemplate,
+  type DbMeasurement,
+  type DbFoodItem,
+  type DbCookingBatch,
+} from './index';
 import { enqueue } from './sync';
 
 /**
@@ -24,7 +31,11 @@ export async function getUsers() {
 // ─── Templates ───────────────────────────────────────────────────────────────
 
 export async function getTemplates(userId: number) {
-  return db.templates.where('user_id').equals(userId).reverse().sortBy('updated_at');
+  return db.templates
+    .where('user_id')
+    .equals(userId)
+    .reverse()
+    .sortBy('updated_at');
 }
 
 export async function getTemplate(userId: number, id: number) {
@@ -33,7 +44,10 @@ export async function getTemplate(userId: number, id: number) {
   return t;
 }
 
-export async function createTemplate(userId: number, data: { name: string; days: any[] }) {
+export async function createTemplate(
+  userId: number,
+  data: { name: string; days: any[] },
+) {
   const now = new Date().toISOString();
   const template: DbTemplate = {
     id: nextTempId(),
@@ -62,7 +76,11 @@ export async function createTemplate(userId: number, data: { name: string; days:
   return template;
 }
 
-export async function updateTemplate(userId: number, templateId: number, data: any) {
+export async function updateTemplate(
+  userId: number,
+  templateId: number,
+  data: any,
+) {
   const existing = await db.templates.get(templateId);
   if (!existing) return;
 
@@ -101,7 +119,18 @@ export async function deleteTemplate(userId: number, templateId: number) {
 // ─── Programs ────────────────────────────────────────────────────────────────
 
 export async function getPrograms(userId: number) {
-  return db.programs.where('user_id').equals(userId).reverse().sortBy('created_at');
+  const programs = await db.programs
+    .where('user_id')
+    .equals(userId)
+    .reverse()
+    .sortBy('created_at');
+  return programs.map((p: any) => ({
+    ...p,
+    days_total: p.days ? p.days.length : 0,
+    days_completed: p.days
+      ? p.days.filter((d: any) => d.completed_at).length
+      : 0,
+  }));
 }
 
 export async function getProgram(userId: number, id: number) {
@@ -149,17 +178,24 @@ export async function createProgram(userId: number, data: any) {
   return program;
 }
 
-export async function updateProgram(userId: number, programId: number, data: any) {
+export async function updateProgram(
+  userId: number,
+  programId: number,
+  data: any,
+) {
   const existing = await db.programs.get(programId);
   if (!existing) return;
 
-  const updated: DbProgram = { ...existing, updated_at: new Date().toISOString() };
+  const updated: DbProgram = {
+    ...existing,
+    updated_at: new Date().toISOString(),
+  };
   if (data.name) updated.name = data.name;
   if (data.start_date !== undefined) updated.start_date = data.start_date;
 
   if (data.days && Array.isArray(data.days)) {
     // Keep completed days, replace non-completed
-    const completedDays = existing.days.filter(d => d.completed_at);
+    const completedDays = existing.days.filter((d) => d.completed_at);
     const newDays = data.days.map((d: any, di: number) => ({
       id: nextTempId(),
       name: d.name,
@@ -194,7 +230,11 @@ export async function deleteProgram(userId: number, programId: number) {
   await enqueue('deleteProgram', { userId, programId });
 }
 
-export async function duplicateProgram(userId: number, programId: number, name?: string) {
+export async function duplicateProgram(
+  userId: number,
+  programId: number,
+  name?: string,
+) {
   const source = await db.programs.get(programId);
   if (!source) return;
 
@@ -249,11 +289,16 @@ export async function finishProgram(userId: number, programId: number) {
 
 // ─── Program Session (in-workout updates) ────────────────────────────────────
 
-export async function updateDay(userId: number, programId: number, dayId: number, data: any) {
+export async function updateDay(
+  userId: number,
+  programId: number,
+  dayId: number,
+  data: any,
+) {
   const program = await db.programs.get(programId);
   if (!program) return;
 
-  const day = program.days.find(d => d.id === dayId);
+  const day = program.days.find((d) => d.id === dayId);
   if (!day) return;
 
   if (data.day_note !== undefined) day.day_note = data.day_note;
@@ -264,34 +309,53 @@ export async function updateDay(userId: number, programId: number, dayId: number
   await enqueue('updateDay', { userId, programId, dayId, data });
 }
 
-export async function updateExercise(userId: number, programId: number, dayId: number, exerciseId: number, data: any) {
+export async function updateExercise(
+  userId: number,
+  programId: number,
+  dayId: number,
+  exerciseId: number,
+  data: any,
+) {
   const program = await db.programs.get(programId);
   if (!program) return;
 
-  const day = program.days.find(d => d.id === dayId);
+  const day = program.days.find((d) => d.id === dayId);
   if (!day) return;
 
-  const exercise = day.exercises.find(e => e.id === exerciseId);
+  const exercise = day.exercises.find((e) => e.id === exerciseId);
   if (!exercise) return;
 
   if (data.note !== undefined) exercise.note = data.note;
 
   program.updated_at = new Date().toISOString();
   await db.programs.put(program);
-  await enqueue('updateExercise', { userId, programId, dayId, exerciseId, data });
+  await enqueue('updateExercise', {
+    userId,
+    programId,
+    dayId,
+    exerciseId,
+    data,
+  });
 }
 
-export async function updateSet(userId: number, programId: number, dayId: number, exerciseId: number, setId: number, data: any) {
+export async function updateSet(
+  userId: number,
+  programId: number,
+  dayId: number,
+  exerciseId: number,
+  setId: number,
+  data: any,
+) {
   const program = await db.programs.get(programId);
   if (!program) return;
 
-  const day = program.days.find(d => d.id === dayId);
+  const day = program.days.find((d) => d.id === dayId);
   if (!day) return;
 
-  const exercise = day.exercises.find(e => e.id === exerciseId);
+  const exercise = day.exercises.find((e) => e.id === exerciseId);
   if (!exercise) return;
 
-  const set = exercise.sets.find(s => s.id === setId);
+  const set = exercise.sets.find((s) => s.id === setId);
   if (!set) return;
 
   if (data.done !== undefined) set.done = data.done;
@@ -300,7 +364,14 @@ export async function updateSet(userId: number, programId: number, dayId: number
 
   program.updated_at = new Date().toISOString();
   await db.programs.put(program);
-  await enqueue('updateSet', { userId, programId, dayId, exerciseId, setId, data });
+  await enqueue('updateSet', {
+    userId,
+    programId,
+    dayId,
+    exerciseId,
+    setId,
+    data,
+  });
 }
 
 // ─── Measurements ────────────────────────────────────────────────────────────
@@ -356,7 +427,11 @@ export async function createFoodItem(userId: number, name: string) {
   return item;
 }
 
-export async function updateFoodItem(userId: number, foodItemId: number, name: string) {
+export async function updateFoodItem(
+  userId: number,
+  foodItemId: number,
+  name: string,
+) {
   const existing = await db.foodItems.get(foodItemId);
   if (!existing) return;
   existing.name = name;
@@ -375,11 +450,18 @@ export async function deleteFoodItem(userId: number, foodItemId: number) {
 // ─── Cooking Batches ─────────────────────────────────────────────────────────
 
 export async function getBatches(userId: number, foodItemId: number) {
-  const batches = await db.cookingBatches.where('food_item_id').equals(foodItemId).toArray();
+  const batches = await db.cookingBatches
+    .where('food_item_id')
+    .equals(foodItemId)
+    .toArray();
   return batches.sort((a, b) => b.cooked_at.localeCompare(a.cooked_at));
 }
 
-export async function createBatch(userId: number, foodItemId: number, data: { raw_weight: number; cooked_weight: number; notes?: string }) {
+export async function createBatch(
+  userId: number,
+  foodItemId: number,
+  data: { raw_weight: number; cooked_weight: number; notes?: string },
+) {
   const batch: DbCookingBatch = {
     id: nextTempId(),
     food_item_id: foodItemId,
@@ -393,22 +475,35 @@ export async function createBatch(userId: number, foodItemId: number, data: { ra
   return batch;
 }
 
-export async function deleteBatch(userId: number, foodItemId: number, batchId: number) {
+export async function deleteBatch(
+  userId: number,
+  foodItemId: number,
+  batchId: number,
+) {
   await db.cookingBatches.delete(batchId);
   await enqueue('deleteBatch', { userId, foodItemId, batchId });
 }
 
 export async function getFoodRatio(userId: number, foodItemId: number) {
   const item = await db.foodItems.get(foodItemId);
-  const batches = await db.cookingBatches.where('food_item_id').equals(foodItemId).toArray();
+  const batches = await db.cookingBatches
+    .where('food_item_id')
+    .equals(foodItemId)
+    .toArray();
 
   const batchCount = batches.length;
   let avgRatio: number | null = null;
   let avgMultiplier: number | null = null;
 
   if (batchCount > 0) {
-    const ratioSum = batches.reduce((sum, b) => sum + b.raw_weight / b.cooked_weight, 0);
-    const multiplierSum = batches.reduce((sum, b) => sum + b.cooked_weight / b.raw_weight, 0);
+    const ratioSum = batches.reduce(
+      (sum, b) => sum + b.raw_weight / b.cooked_weight,
+      0,
+    );
+    const multiplierSum = batches.reduce(
+      (sum, b) => sum + b.cooked_weight / b.raw_weight,
+      0,
+    );
     avgRatio = Math.round((ratioSum / batchCount) * 10000) / 10000;
     avgMultiplier = Math.round((multiplierSum / batchCount) * 100) / 100;
   }
@@ -423,7 +518,12 @@ export async function getFoodRatio(userId: number, foodItemId: number) {
 
 // ─── Exercise/Day History (read from local programs) ─────────────────────────
 
-export async function getExerciseHistory(userId: number, programId: number, dayName: string, exerciseName: string) {
+export async function getExerciseHistory(
+  userId: number,
+  programId: number,
+  dayName: string,
+  exerciseName: string,
+) {
   // Find notes for this exercise from completed days in other programs with the same day/exercise name
   const programs = await db.programs.where('user_id').equals(userId).toArray();
   const history: any[] = [];
@@ -448,14 +548,22 @@ export async function getExerciseHistory(userId: number, programId: number, dayN
   return history.sort((a, b) => b.completed_at.localeCompare(a.completed_at));
 }
 
-export async function getDayHistory(userId: number, programId: number, dayName: string) {
+export async function getDayHistory(
+  userId: number,
+  programId: number,
+  dayName: string,
+) {
   const programs = await db.programs.where('user_id').equals(userId).toArray();
   const history: any[] = [];
 
   for (const p of programs) {
     if (p.id === programId) continue;
     for (const day of p.days) {
-      if (day.name.trim() === dayName.trim() && day.completed_at && day.day_note) {
+      if (
+        day.name.trim() === dayName.trim() &&
+        day.completed_at &&
+        day.day_note
+      ) {
         history.push({
           program_name: p.name,
           completed_at: day.completed_at,
