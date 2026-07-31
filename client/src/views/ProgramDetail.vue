@@ -684,10 +684,10 @@ async function exportProgram() {
                   </div>
                 </div>
                 <div
-                  v-if="ex.exercise_note"
+                  v-if="ex.note"
                   class="ml-5 mt-1 text-xs text-gray-500 dark:text-gray-400 italic"
                 >
-                  📝 {{ ex.exercise_note }}
+                  📝 {{ ex.note }}
                 </div>
               </div>
             </div>

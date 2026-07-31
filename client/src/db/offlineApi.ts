@@ -612,7 +612,7 @@ export async function getExerciseHistory(
             history.push({
               program_name: p.name,
               completed_at: day.completed_at,
-              note: ex.note,
+              exercise_note: ex.note,
             });
           }
         }
