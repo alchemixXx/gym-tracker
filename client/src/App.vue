@@ -64,6 +64,14 @@ async function triggerSync(userId: number) {
     await pullAllData(userId);
   } catch (err) {
     console.error('Initial sync failed:', err);
+    // Retry once after a delay — handles race with server startup
+    setTimeout(async () => {
+      try {
+        await pullAllData(userId);
+      } catch (retryErr) {
+        console.error('Sync retry also failed:', retryErr);
+      }
+    }, 5000);
   } finally {
     initialSyncing.value = false;
   }

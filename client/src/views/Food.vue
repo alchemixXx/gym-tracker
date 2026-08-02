@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import * as offlineApi from '@/db/offlineApi';
+import { lastSyncAt } from '@/db/sync';
 
 const userStore = useUserStore();
 const router = useRouter();
@@ -14,6 +15,11 @@ const loading = ref(true);
 onMounted(async () => {
   await loadItems();
   loading.value = false;
+});
+
+// Re-load when sync pulls fresh data
+watch(lastSyncAt, () => {
+  loadItems();
 });
 
 async function loadItems() {

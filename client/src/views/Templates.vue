@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import * as offlineApi from '@/db/offlineApi';
+import { lastSyncAt, syncState } from '@/db/sync';
 
 const router = useRouter();
 const userStore = useUserStore();
@@ -13,7 +14,22 @@ const loading = ref(true);
 
 onMounted(async () => {
   await loadTemplates();
+  if (templates.value.length > 0 || syncState.value !== 'syncing') {
+    loading.value = false;
+  }
+});
+
+// Re-load when sync pulls fresh data
+watch(lastSyncAt, () => {
+  loadTemplates();
   loading.value = false;
+});
+
+// Stop loading if sync fails
+watch(syncState, (state) => {
+  if (state === 'error' || state === 'idle') {
+    loading.value = false;
+  }
 });
 
 async function loadTemplates() {

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue';
+import { onMounted, ref, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import * as offlineApi from '@/db/offlineApi';
+import { lastSyncAt, syncState } from '@/db/sync';
 
 const router = useRouter();
 const userStore = useUserStore();
@@ -16,7 +17,24 @@ const loading = ref(true);
 onMounted(async () => {
   await loadPrograms();
   templates.value = await offlineApi.getTemplates(userStore.currentUser!.id);
+  // Only hide loading if we have data or sync is not in progress
+  if (programs.value.length > 0 || syncState.value !== 'syncing') {
+    loading.value = false;
+  }
+});
+
+// Re-load when sync pulls fresh data
+watch(lastSyncAt, async () => {
+  await loadPrograms();
+  templates.value = await offlineApi.getTemplates(userStore.currentUser!.id);
   loading.value = false;
+});
+
+// Stop loading if sync fails
+watch(syncState, (state) => {
+  if (state === 'error' || state === 'idle') {
+    loading.value = false;
+  }
 });
 
 async function loadPrograms() {

@@ -25,30 +25,66 @@ async function updatePendingCount(): Promise<void> {
 
 // ─── Full Pull (download all user data) ──────────────────────────────────────
 
+const PULL_MAX_RETRIES = 10;
+const PULL_RETRY_DELAY_MS = 3000;
+
+async function fetchWithRetry(url: string): Promise<any> {
+  for (let attempt = 0; attempt <= PULL_MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) {
+        return res.json();
+      }
+      // Server error (502/503/504) — retry
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        if (attempt < PULL_MAX_RETRIES) {
+          await new Promise((r) => setTimeout(r, PULL_RETRY_DELAY_MS));
+          continue;
+        }
+      }
+      throw new Error(`Sync pull failed: ${res.status}`);
+    } catch (err: any) {
+      // Network error (server unreachable) — retry
+      if (err.message?.includes('Sync pull failed')) throw err;
+      if (attempt < PULL_MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, PULL_RETRY_DELAY_MS));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error('Sync pull failed: max retries exceeded');
+}
+
 export async function pullAllData(userId: number): Promise<void> {
   syncState.value = 'syncing';
   try {
-    const response = await fetch(`/api/users/${userId}/sync`);
-    if (!response.ok) {
-      throw new Error(`Sync pull failed: ${response.status}`);
-    }
-    const data = await response.json();
+    // Use retry logic to handle cold-starting servers (free hosting)
+    const data = await fetchWithRetry(`/api/users/${userId}/sync`);
 
     // Safety check: if the response has no synced_at timestamp, it's invalid
     if (!data.synced_at) {
       throw new Error('Invalid sync response: missing synced_at');
     }
 
-    // Only replace local data if the server actually returned content.
-    // If ALL data arrays are empty/missing, it likely means the server has no
-    // data for this user — preserve local data and just push pending changes.
-    const hasAnyData =
+    // Check for pending changes before entering transaction
+    const pendingItems = await db.syncQueue.count();
+
+    // If we have pending (un-pushed) changes and server returned empty data,
+    // skip the replace to avoid wiping local-only data
+    const hasServerData =
       (data.templates?.length ?? 0) > 0 ||
       (data.programs?.length ?? 0) > 0 ||
       (data.measurements?.length ?? 0) > 0 ||
-      (data.foodItems?.length ?? 0) > 0 ||
-      (data.cookingBatches?.length ?? 0) > 0;
+      (data.foodItems?.length ?? 0) > 0;
 
+    if (!hasServerData && pendingItems > 0) {
+      // Server has nothing but we have unsynced local changes — don't wipe
+      syncState.value = 'idle';
+      return;
+    }
+
+    // Replace local data for this user in a transaction
     await db.transaction(
       'rw',
       [
@@ -61,44 +97,34 @@ export async function pullAllData(userId: number): Promise<void> {
         db.syncMeta,
       ],
       async () => {
-        // Always update users list if provided
+        // Always update users list
         if (data.users?.length) await db.users.bulkPut(data.users);
 
-        // Only clear-and-replace entity data if server actually has data,
-        // OR if we have no pending changes (meaning server is source of truth)
-        const pendingItems = await db.syncQueue.count();
-        const safeToReplace = hasAnyData || pendingItems === 0;
+        // Clear and replace user-specific data
+        await db.templates.where('user_id').equals(userId).delete();
+        await db.programs.where('user_id').equals(userId).delete();
+        await db.measurements.where('user_id').equals(userId).delete();
 
-        if (safeToReplace) {
-          // Clear user-specific data
-          await db.templates.where('user_id').equals(userId).delete();
-          await db.programs.where('user_id').equals(userId).delete();
-          await db.measurements.where('user_id').equals(userId).delete();
-
-          // Food items & batches: delete batches for this user's food items first
-          const userFoodItems = await db.foodItems
-            .where('user_id')
-            .equals(userId)
-            .toArray();
-          for (const item of userFoodItems) {
-            await db.cookingBatches
-              .where('food_item_id')
-              .equals(item.id)
-              .delete();
-          }
-          await db.foodItems.where('user_id').equals(userId).delete();
-
-          // Store fresh data
-          if (data.templates?.length)
-            await db.templates.bulkPut(data.templates);
-          if (data.programs?.length) await db.programs.bulkPut(data.programs);
-          if (data.measurements?.length)
-            await db.measurements.bulkPut(data.measurements);
-          if (data.foodItems?.length)
-            await db.foodItems.bulkPut(data.foodItems);
-          if (data.cookingBatches?.length)
-            await db.cookingBatches.bulkPut(data.cookingBatches);
+        const userFoodItems = await db.foodItems
+          .where('user_id')
+          .equals(userId)
+          .toArray();
+        for (const item of userFoodItems) {
+          await db.cookingBatches
+            .where('food_item_id')
+            .equals(item.id)
+            .delete();
         }
+        await db.foodItems.where('user_id').equals(userId).delete();
+
+        // Store fresh data from server
+        if (data.templates?.length) await db.templates.bulkPut(data.templates);
+        if (data.programs?.length) await db.programs.bulkPut(data.programs);
+        if (data.measurements?.length)
+          await db.measurements.bulkPut(data.measurements);
+        if (data.foodItems?.length) await db.foodItems.bulkPut(data.foodItems);
+        if (data.cookingBatches?.length)
+          await db.cookingBatches.bulkPut(data.cookingBatches);
 
         // Update sync timestamp
         await db.syncMeta.put({

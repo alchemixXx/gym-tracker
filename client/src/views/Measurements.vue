@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue';
+import { onMounted, ref, computed, watch } from 'vue';
 import { useUserStore } from '@/stores/user';
 import * as offlineApi from '@/db/offlineApi';
 import { api } from '@/api';
 import { useOnline } from '@/composables/useOnline';
+import { lastSyncAt } from '@/db/sync';
 
 const userStore = useUserStore();
 const { isOnline } = useOnline();
@@ -70,6 +71,11 @@ const weightTrend = computed(() => {
 onMounted(async () => {
   await loadMeasurements();
   loading.value = false;
+});
+
+// Re-load when sync pulls fresh data
+watch(lastSyncAt, () => {
+  loadMeasurements();
 });
 
 async function loadMeasurements() {
