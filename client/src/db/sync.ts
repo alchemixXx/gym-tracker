@@ -34,7 +34,21 @@ export async function pullAllData(userId: number): Promise<void> {
     }
     const data = await response.json();
 
-    // Replace local data for this user in a transaction
+    // Safety check: if the response has no synced_at timestamp, it's invalid
+    if (!data.synced_at) {
+      throw new Error('Invalid sync response: missing synced_at');
+    }
+
+    // Only replace local data if the server actually returned content.
+    // If ALL data arrays are empty/missing, it likely means the server has no
+    // data for this user — preserve local data and just push pending changes.
+    const hasAnyData =
+      (data.templates?.length ?? 0) > 0 ||
+      (data.programs?.length ?? 0) > 0 ||
+      (data.measurements?.length ?? 0) > 0 ||
+      (data.foodItems?.length ?? 0) > 0 ||
+      (data.cookingBatches?.length ?? 0) > 0;
+
     await db.transaction(
       'rw',
       [
@@ -47,32 +61,44 @@ export async function pullAllData(userId: number): Promise<void> {
         db.syncMeta,
       ],
       async () => {
-        // Clear user-specific data
-        await db.templates.where('user_id').equals(userId).delete();
-        await db.programs.where('user_id').equals(userId).delete();
-        await db.measurements.where('user_id').equals(userId).delete();
+        // Always update users list if provided
+        if (data.users?.length) await db.users.bulkPut(data.users);
 
-        // Food items & batches: delete batches for this user's food items first
-        const userFoodItems = await db.foodItems
-          .where('user_id')
-          .equals(userId)
-          .toArray();
-        for (const item of userFoodItems) {
-          await db.cookingBatches
-            .where('food_item_id')
-            .equals(item.id)
-            .delete();
+        // Only clear-and-replace entity data if server actually has data,
+        // OR if we have no pending changes (meaning server is source of truth)
+        const pendingItems = await db.syncQueue.count();
+        const safeToReplace = hasAnyData || pendingItems === 0;
+
+        if (safeToReplace) {
+          // Clear user-specific data
+          await db.templates.where('user_id').equals(userId).delete();
+          await db.programs.where('user_id').equals(userId).delete();
+          await db.measurements.where('user_id').equals(userId).delete();
+
+          // Food items & batches: delete batches for this user's food items first
+          const userFoodItems = await db.foodItems
+            .where('user_id')
+            .equals(userId)
+            .toArray();
+          for (const item of userFoodItems) {
+            await db.cookingBatches
+              .where('food_item_id')
+              .equals(item.id)
+              .delete();
+          }
+          await db.foodItems.where('user_id').equals(userId).delete();
+
+          // Store fresh data
+          if (data.templates?.length)
+            await db.templates.bulkPut(data.templates);
+          if (data.programs?.length) await db.programs.bulkPut(data.programs);
+          if (data.measurements?.length)
+            await db.measurements.bulkPut(data.measurements);
+          if (data.foodItems?.length)
+            await db.foodItems.bulkPut(data.foodItems);
+          if (data.cookingBatches?.length)
+            await db.cookingBatches.bulkPut(data.cookingBatches);
         }
-        await db.foodItems.where('user_id').equals(userId).delete();
-
-        // Store fresh data
-        if (data.templates?.length) await db.templates.bulkPut(data.templates);
-        if (data.programs?.length) await db.programs.bulkPut(data.programs);
-        if (data.measurements?.length)
-          await db.measurements.bulkPut(data.measurements);
-        if (data.foodItems?.length) await db.foodItems.bulkPut(data.foodItems);
-        if (data.cookingBatches?.length)
-          await db.cookingBatches.bulkPut(data.cookingBatches);
 
         // Update sync timestamp
         await db.syncMeta.put({

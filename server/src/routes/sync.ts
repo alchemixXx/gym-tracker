@@ -114,7 +114,8 @@ syncRoutes.get('/:userId/sync', async (req, res) => {
           name: day.name,
           sort_order: day.sort_order,
           day_note: day.day_note || null,
-          completed_at: day.completed_at?.toISOString?.() || day.completed_at || null,
+          completed_at:
+            day.completed_at?.toISOString?.() || day.completed_at || null,
           exercises,
         });
       }
@@ -125,7 +126,8 @@ syncRoutes.get('/:userId/sync', async (req, res) => {
         template_id: p.template_id || null,
         name: p.name,
         status: p.status || 'active',
-        start_date: p.start_date?.toISOString?.()?.split('T')[0] || p.start_date || null,
+        start_date:
+          p.start_date?.toISOString?.()?.split('T')[0] || p.start_date || null,
         created_at: p.created_at?.toISOString?.() || p.created_at,
         updated_at: p.updated_at?.toISOString?.() || p.updated_at,
         days,
@@ -202,8 +204,17 @@ syncRoutes.get('/:userId/sync', async (req, res) => {
       }));
     }
 
+    // ─── All Users (so other devices can populate user list) ──────────────
+    const usersResult = await pool.query('SELECT * FROM users ORDER BY name');
+    const users = usersResult.rows.map((u: any) => ({
+      id: u.id,
+      name: u.name,
+      created_at: u.created_at?.toISOString?.() || u.created_at,
+    }));
+
     // ─── Response ──────────────────────────────────────────────────────────
     res.json({
+      users,
       templates,
       programs,
       measurements,

@@ -22,19 +22,30 @@ export const useUserStore = defineStore('user', () => {
   }
 
   async function fetchUsers() {
-    // Try online first, fallback to local DB
-    try {
-      if (navigator.onLine) {
-        users.value = await api.getUsers();
-        // Cache in IndexedDB
-        await db.users.clear();
-        if (users.value.length) await db.users.bulkPut(users.value);
-      } else {
-        users.value = await db.users.toArray();
+    // Always load local data first (instant, never empty on returning visits)
+    const localUsers = await db.users.toArray();
+    if (localUsers.length) {
+      users.value = localUsers;
+    }
+
+    // Then try to refresh from server if online
+    if (navigator.onLine) {
+      try {
+        const serverUsers = await api.getUsers();
+        if (serverUsers && serverUsers.length) {
+          users.value = serverUsers;
+          // Update IndexedDB cache (merge, don't clear-then-write)
+          await db.users.bulkPut(serverUsers);
+          // Remove locally cached users that no longer exist on server
+          const serverIds = new Set(serverUsers.map((u: User) => u.id));
+          const staleLocal = localUsers.filter((u) => !serverIds.has(u.id));
+          if (staleLocal.length) {
+            await db.users.bulkDelete(staleLocal.map((u) => u.id));
+          }
+        }
+      } catch {
+        // Server unavailable — local data already loaded above, nothing to do
       }
-    } catch {
-      // Fallback to local
-      users.value = await db.users.toArray();
     }
   }
 

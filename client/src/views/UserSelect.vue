@@ -5,6 +5,8 @@ import { useUserStore } from '@/stores/user';
 const userStore = useUserStore();
 const newName = ref('');
 const loading = ref(false);
+const creating = ref(false);
+const error = ref('');
 
 onMounted(async () => {
   loading.value = true;
@@ -13,10 +15,20 @@ onMounted(async () => {
 });
 
 async function createUser() {
-  if (!newName.value.trim()) return;
-  const user = await userStore.createUser(newName.value.trim());
-  userStore.selectUser(user);
-  newName.value = '';
+  if (!newName.value.trim() || creating.value) return;
+  error.value = '';
+  creating.value = true;
+  try {
+    const user = await userStore.createUser(newName.value.trim());
+    newName.value = '';
+    userStore.selectUser(user);
+  } catch (err: any) {
+    error.value = navigator.onLine
+      ? 'Не вдалося створити профіль. Спробуйте ще раз.'
+      : "Для створення профілю потрібне з'єднання з інтернетом.";
+  } finally {
+    creating.value = false;
+  }
 }
 </script>
 
@@ -116,13 +128,15 @@ async function createUser() {
             v-model="newName"
             placeholder="Ваше ім'я"
             class="input flex-1"
+            :disabled="creating"
           />
           <button
             type="submit"
-            :disabled="!newName.trim()"
+            :disabled="!newName.trim() || creating"
             class="btn-primary !px-5 disabled:opacity-50"
           >
             <svg
+              v-if="!creating"
               class="w-5 h-5"
               fill="none"
               viewBox="0 0 24 24"
@@ -135,8 +149,31 @@ async function createUser() {
                 d="M12 4v16m8-8H4"
               />
             </svg>
+            <svg
+              v-else
+              class="w-5 h-5 animate-spin"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                class="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                stroke-width="4"
+              ></circle>
+              <path
+                class="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              ></path>
+            </svg>
           </button>
         </form>
+        <p v-if="error" class="mt-2 text-sm text-red-500 dark:text-red-400">
+          {{ error }}
+        </p>
       </div>
     </div>
   </div>
