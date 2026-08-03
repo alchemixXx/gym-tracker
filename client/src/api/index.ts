@@ -1,6 +1,16 @@
 import { ref } from 'vue';
+import { Capacitor } from '@capacitor/core';
 
-const BASE_URL = '/api';
+// In native app, use the full server URL; in web, use relative path (proxied by Vite)
+const BASE_URL = Capacitor.isNativePlatform()
+  ? (import.meta.env.VITE_API_URL || 'https://gym-tracker-nm7e.onrender.com') +
+    '/api'
+  : '/api';
+
+/** Expose base URL for modules that build their own fetch calls */
+export function getBaseUrl(): string {
+  return BASE_URL;
+}
 
 /** Reactive flag: true while the server is cold-starting */
 export const serverWaking = ref(false);

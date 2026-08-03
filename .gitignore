@@ -3,3 +3,13 @@ dist/
 .env
 *.log
 .DS_Store
+
+# Capacitor Android — ignore build artifacts but keep source
+client/android/.gradle/
+client/android/build/
+client/android/app/build/
+client/android/app/release/
+client/android/capacitor-cordova-android-plugins/build/
+client/android/capacitor-android/build/
+client/android/.idea/
+client/android/local.properties

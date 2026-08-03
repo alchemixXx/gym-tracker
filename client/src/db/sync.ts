@@ -1,5 +1,5 @@
 import { db, type DbSyncQueueItem, type SyncAction } from './index';
-import { api } from '../api';
+import { api, getBaseUrl } from '../api';
 import { ref } from 'vue';
 
 /** Reactive sync state */
@@ -60,7 +60,7 @@ export async function pullAllData(userId: number): Promise<void> {
   syncState.value = 'syncing';
   try {
     // Use retry logic to handle cold-starting servers (free hosting)
-    const data = await fetchWithRetry(`/api/users/${userId}/sync`);
+    const data = await fetchWithRetry(`${getBaseUrl()}/users/${userId}/sync`);
 
     // Safety check: if the response has no synced_at timestamp, it's invalid
     if (!data.synced_at) {
