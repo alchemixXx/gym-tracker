@@ -20,6 +20,13 @@ let _transporter: nodemailer.Transporter | null = null;
 
 function getTransporter(): nodemailer.Transporter {
   if (!_transporter) {
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      console.error(
+        'SMTP credentials missing! Set SMTP_USER and SMTP_PASS environment variables.',
+        'Available env keys:',
+        Object.keys(process.env).filter((k) => k.startsWith('SMTP')),
+      );
+    }
     _transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || 'smtp.gmail.com',
       port: parseInt(process.env.SMTP_PORT || '587'),
