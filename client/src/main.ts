@@ -18,9 +18,14 @@ if (Capacitor.isNativePlatform()) {
   CapApp.addListener('appUrlOpen', (event) => {
     try {
       const url = new URL(event.url);
+      // Custom scheme: gymtracker://auth/verify?token=...
+      // HTTPS App Link: https://gym-tracker-nm7e.onrender.com/auth/verify?token=...
       const path = url.pathname + url.search;
-      if (path.startsWith('/auth/')) {
-        router.push(path);
+      if (path.startsWith('/auth/') || url.host === 'auth') {
+        // Custom scheme puts path as /verify?token=..., host as 'auth'
+        const routePath =
+          url.host === 'auth' ? `/auth${url.pathname}${url.search}` : path;
+        router.push(routePath);
       }
     } catch {
       // Ignore malformed URLs

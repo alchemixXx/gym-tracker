@@ -100,6 +100,7 @@ authRoutes.post('/magic-link', async (req, res) => {
 
     // Send email
     const magicLinkUrl = `${APP_URL}/auth/verify?token=${token}`;
+    const appLinkUrl = `gymtracker://auth/verify?token=${token}`;
 
     await getTransporter().sendMail({
       from: process.env.SMTP_FROM || process.env.SMTP_USER,
@@ -109,10 +110,15 @@ authRoutes.post('/magic-link', async (req, res) => {
         <div style="font-family: sans-serif; max-width: 400px; margin: 0 auto; padding: 20px;">
           <h2 style="color: #4F46E5;">Gym Tracker</h2>
           <p>Натисніть кнопку нижче, щоб увійти:</p>
-          <a href="${magicLinkUrl}" 
+          <a href="${appLinkUrl}" 
              style="display: inline-block; padding: 12px 24px; background: #4F46E5; color: white; text-decoration: none; border-radius: 8px; margin: 16px 0;">
-            Увійти
+            Відкрити в додатку
           </a>
+          <p style="margin-top: 12px;">
+            <a href="${magicLinkUrl}" style="color: #4F46E5; font-size: 14px;">
+              Або відкрити у браузері
+            </a>
+          </p>
           <p style="color: #6B7280; font-size: 14px;">
             Посилання дійсне ${MAGIC_LINK_EXPIRY_MINUTES} хвилин.<br>
             Якщо ви не запитували вхід — проігноруйте цей лист.
