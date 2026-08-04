@@ -52,6 +52,22 @@ app.use('/api/users', protectedUserData);
 // Serve photo images directly from DB (protected)
 app.use('/api/photos', requireAuth, photoImageRoutes);
 
+// Android App Links verification
+app.get('/.well-known/assetlinks.json', (_req, res) => {
+  res.json([
+    {
+      relation: ['delegate_permission/common.handle_all_urls'],
+      target: {
+        namespace: 'android_app',
+        package_name: 'com.gymtracker.app',
+        sha256_cert_fingerprints: [
+          'C4:41:53:A0:36:BF:38:D3:E2:98:AF:CC:C4:B0:B1:9D:13:20:9C:FD:3C:88:BE:82:5A:05:D6:DC:17:38:9C:0B',
+        ],
+      },
+    },
+  ]);
+});
+
 // Health check
 app.get('/api/health', async (_req, res) => {
   try {
@@ -66,7 +82,11 @@ app.get('/api/health', async (_req, res) => {
 if (process.env.NODE_ENV === 'production') {
   const clientDist = path.join(__dirname, '../../client/dist');
   app.use(express.static(clientDist));
-  app.get('*', (_req, res) => {
+  app.get('*', (req, res) => {
+    // Don't serve SPA for API or well-known routes
+    if (req.path.startsWith('/api') || req.path.startsWith('/.well-known')) {
+      return res.status(404).json({ error: 'Not found' });
+    }
     res.sendFile(path.join(clientDist, 'index.html'));
   });
 }
