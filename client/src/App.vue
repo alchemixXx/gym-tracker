@@ -145,7 +145,7 @@ function isActive(path: string) {
     <template v-else>
       <!-- Header -->
       <header
-        class="bg-gradient-to-r from-slate-900 to-blue-900 dark:from-gray-950 dark:to-gray-900 sticky top-0 z-50"
+        class="bg-gradient-to-r from-slate-900 to-blue-900 dark:from-gray-950 dark:to-gray-900 sticky top-0 z-50 pt-safe"
       >
         <div
           class="max-w-lg mx-auto px-4 py-3 flex items-center justify-between"

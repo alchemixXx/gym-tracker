@@ -12,6 +12,7 @@
     "build:server": "npm run build --workspace=server",
     "build:client": "npm run build --workspace=client",
     "build": "npm run build:client && npm run build:server",
+    "build:android": "cd client && npx cap sync android && cd android && ./gradlew assembleDebug",
     "start": "node server/dist/index.js",
     "migrate": "npm run migrate --workspace=server"
   },
