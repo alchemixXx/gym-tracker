@@ -204,11 +204,15 @@ syncRoutes.get('/:userId/sync', async (req, res) => {
       }));
     }
 
-    // ─── All Users (so other devices can populate user list) ──────────────
-    const usersResult = await pool.query('SELECT * FROM users ORDER BY name');
+    // ─── Current user only ───────────────────────────────────────────────
+    const usersResult = await pool.query(
+      'SELECT id, name, email, created_at FROM users WHERE id = $1',
+      [userId],
+    );
     const users = usersResult.rows.map((u: any) => ({
       id: u.id,
       name: u.name,
+      email: u.email,
       created_at: u.created_at?.toISOString?.() || u.created_at,
     }));
 

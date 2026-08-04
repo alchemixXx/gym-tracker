@@ -18,6 +18,84 @@ export const serverWaking = ref(false);
 const MAX_RETRIES = 10;
 const RETRY_DELAY_MS = 3000;
 
+// --- Token management ---
+
+const TOKEN_STORAGE_KEY = 'gym-tracker-tokens';
+
+interface TokenPair {
+  accessToken: string;
+  refreshToken: string;
+}
+
+let tokens: TokenPair | null = null;
+
+// Restore tokens from localStorage
+const stored = localStorage.getItem(TOKEN_STORAGE_KEY);
+if (stored) {
+  try {
+    tokens = JSON.parse(stored);
+  } catch {}
+}
+
+export function setTokens(pair: TokenPair) {
+  tokens = pair;
+  localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(pair));
+}
+
+export function getTokens(): TokenPair | null {
+  return tokens;
+}
+
+export function clearTokens() {
+  tokens = null;
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+}
+
+export function isAuthenticated(): boolean {
+  return tokens !== null;
+}
+
+// Flag to prevent multiple simultaneous refresh calls
+let refreshPromise: Promise<boolean> | null = null;
+
+async function refreshAccessToken(): Promise<boolean> {
+  if (!tokens?.refreshToken) return false;
+
+  // Deduplicate concurrent refresh calls
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: tokens!.refreshToken }),
+      });
+
+      if (!res.ok) {
+        // Refresh token is invalid/expired — force logout
+        clearTokens();
+        return false;
+      }
+
+      const data = await res.json();
+      setTokens({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+      });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
+// --- Request helper ---
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -33,14 +111,50 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     let res: Response | undefined;
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(options?.headers as Record<string, string>),
+      };
+
+      // Attach auth token if available
+      if (tokens?.accessToken) {
+        headers['Authorization'] = `Bearer ${tokens.accessToken}`;
+      }
+
       res = await fetch(`${BASE_URL}${url}`, {
-        headers: { 'Content-Type': 'application/json' },
         ...options,
+        headers,
       });
 
       if (!isNetworkOrServerError(null, res)) {
         // Server is alive — clear waking state
         serverWaking.value = false;
+
+        // Handle 401 — try to refresh token and retry once
+        if (res.status === 401 && tokens?.refreshToken) {
+          const refreshed = await refreshAccessToken();
+          if (refreshed) {
+            // Retry the original request with new token
+            const retryHeaders: Record<string, string> = {
+              'Content-Type': 'application/json',
+              ...(options?.headers as Record<string, string>),
+              Authorization: `Bearer ${tokens!.accessToken}`,
+            };
+            const retryRes = await fetch(`${BASE_URL}${url}`, {
+              ...options,
+              headers: retryHeaders,
+            });
+            if (!retryRes.ok) {
+              const error = await retryRes
+                .json()
+                .catch(() => ({ error: 'Request failed' }));
+              throw new Error(error.error || 'Request failed');
+            }
+            return retryRes.json();
+          }
+          // Refresh failed — throw to trigger logout in the app
+          throw new Error('Session expired');
+        }
 
         if (!res.ok) {
           const error = await res
@@ -69,16 +183,92 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   throw lastError || new Error('Server unavailable');
 }
 
-// Users
-export const api = {
-  // Users
-  getUsers: () => request<any[]>('/users'),
-  createUser: (name: string) =>
-    request<any>('/users', {
+/**
+ * Like request() but for FormData (no Content-Type header — browser sets multipart boundary).
+ */
+async function uploadRequest<T>(url: string, options: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (tokens?.accessToken) {
+    headers['Authorization'] = `Bearer ${tokens.accessToken}`;
+  }
+
+  const res = await fetch(`${BASE_URL}${url}`, {
+    ...options,
+    headers,
+  });
+
+  if (res.status === 401 && tokens?.refreshToken) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      const retryHeaders: Record<string, string> = {
+        Authorization: `Bearer ${tokens!.accessToken}`,
+      };
+      const retryRes = await fetch(`${BASE_URL}${url}`, {
+        ...options,
+        headers: retryHeaders,
+      });
+      if (!retryRes.ok) throw new Error('Upload failed');
+      return retryRes.json();
+    }
+    throw new Error('Session expired');
+  }
+
+  if (!res.ok) throw new Error('Upload failed');
+  return res.json();
+}
+
+// --- Auth API ---
+
+export const authApi = {
+  requestMagicLink: (email: string) =>
+    request<{ message: string }>('/auth/magic-link', {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ email }),
     }),
 
+  verifyMagicLink: (token: string) =>
+    request<{
+      accessToken?: string;
+      refreshToken?: string;
+      user?: any;
+      needsClaim?: boolean;
+      claimToken?: string;
+      unclaimedUsers?: any[];
+    }>('/auth/verify', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
+
+  claimAccount: (claimToken: string, userId: number | null) =>
+    request<{ accessToken: string; refreshToken: string; user: any }>(
+      '/auth/claim',
+      {
+        method: 'POST',
+        body: JSON.stringify({ claimToken, userId }),
+      },
+    ),
+
+  refreshToken: () =>
+    request<{ accessToken: string; refreshToken: string; user: any }>(
+      '/auth/refresh',
+      {
+        method: 'POST',
+        body: JSON.stringify({ refreshToken: tokens?.refreshToken }),
+      },
+    ),
+
+  logout: () =>
+    request<{ message: string }>('/auth/logout', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken: tokens?.refreshToken }),
+    }),
+
+  getMe: () => request<any>('/users/me'),
+};
+
+// --- Data API ---
+
+export const api = {
   // Templates
   getTemplates: (userId: number) =>
     request<any[]>(`/users/${userId}/templates`),
@@ -210,16 +400,13 @@ export const api = {
     for (const file of files) {
       formData.append('photos', file);
     }
-    return fetch(
-      `${BASE_URL}/users/${userId}/measurements/${measurementId}/photos`,
+    return uploadRequest<any>(
+      `/users/${userId}/measurements/${measurementId}/photos`,
       {
         method: 'POST',
         body: formData,
       },
-    ).then((res) => {
-      if (!res.ok) throw new Error('Upload failed');
-      return res.json();
-    });
+    );
   },
   deleteMeasurementPhoto: (
     userId: number,
@@ -272,4 +459,7 @@ export const api = {
     ),
   getFoodRatio: (userId: number, foodItemId: number) =>
     request<any>(`/users/${userId}/food-items/${foodItemId}/ratio`),
+
+  // Sync
+  syncAll: (userId: number) => request<any>(`/users/${userId}/sync`),
 };

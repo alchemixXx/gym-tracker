@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue';
-import { useUserStore } from '@/stores/user';
+import { useAuthStore } from '@/stores/auth';
 import { serverWaking } from '@/api';
 import { useRoute } from 'vue-router';
 import { useOnline } from '@/composables/useOnline';
@@ -11,9 +11,9 @@ import {
   syncState,
   pendingCount,
 } from '@/db/sync';
-import UserSelect from '@/views/UserSelect.vue';
+import Login from '@/views/Login.vue';
 
-const userStore = useUserStore();
+const authStore = useAuthStore();
 const route = useRoute();
 const { isOnline } = useOnline();
 const darkMode = ref(false);
@@ -33,14 +33,14 @@ onMounted(() => {
   startAutoSync();
 
   // If user already logged in and online, sync
-  if (userStore.currentUser && isOnline.value) {
-    triggerSync(userStore.currentUser.id);
+  if (authStore.user && isOnline.value) {
+    triggerSync(authStore.user.id);
   }
 });
 
 // Watch for user login → trigger initial sync
 watch(
-  () => userStore.currentUser,
+  () => authStore.user,
   (user) => {
     if (user && isOnline.value) {
       triggerSync(user.id);
@@ -50,9 +50,9 @@ watch(
 
 // Watch for coming back online → push + pull
 watch(isOnline, (online) => {
-  if (online && userStore.currentUser) {
+  if (online && authStore.user) {
     pushPendingChanges()
-      .then(() => pullAllData(userStore.currentUser!.id))
+      .then(() => pullAllData(authStore.user!.id))
       .catch(console.error);
   }
 });
@@ -141,7 +141,10 @@ function isActive(path: string) {
   </div>
 
   <div v-else class="min-h-screen">
-    <UserSelect v-if="!userStore.currentUser" />
+    <!-- Auth gate: show login if not authenticated -->
+    <Login v-if="!authStore.isLoggedIn && !route.path.startsWith('/auth')" />
+    <!-- Magic link verification route is handled by the router -->
+    <router-view v-else-if="route.path.startsWith('/auth')" />
     <template v-else>
       <!-- Header -->
       <header
@@ -210,17 +213,15 @@ function isActive(path: string) {
               <span v-else class="text-sm">🌙</span>
             </button>
             <button
-              @click="userStore.logout()"
+              @click="authStore.logout()"
               class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm text-white/90 transition-colors"
             >
               <span
                 class="w-6 h-6 rounded-full bg-blue-500/50 flex items-center justify-center text-xs font-bold"
               >
-                {{ userStore.currentUser.name.charAt(0).toUpperCase() }}
+                {{ authStore.user!.name.charAt(0).toUpperCase() }}
               </span>
-              <span class="hidden sm:inline">{{
-                userStore.currentUser.name
-              }}</span>
+              <span class="hidden sm:inline">{{ authStore.user!.name }}</span>
             </button>
           </div>
         </div>

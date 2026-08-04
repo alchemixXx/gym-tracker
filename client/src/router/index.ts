@@ -8,6 +8,16 @@ const router = createRouter({
       redirect: '/programs',
     },
     {
+      path: '/auth/verify',
+      name: 'auth-verify',
+      component: () => import('@/views/AuthVerify.vue'),
+    },
+    {
+      path: '/auth/claim',
+      name: 'auth-claim',
+      component: () => import('@/views/ClaimAccount.vue'),
+    },
+    {
       path: '/programs',
       name: 'programs',
       component: () => import('@/views/Programs.vue'),

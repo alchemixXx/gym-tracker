@@ -1,5 +1,5 @@
 import { db, type DbSyncQueueItem, type SyncAction } from './index';
-import { api, getBaseUrl } from '../api';
+import { api, getBaseUrl, getTokens } from '../api';
 import { ref } from 'vue';
 
 /** Reactive sync state */
@@ -31,7 +31,12 @@ const PULL_RETRY_DELAY_MS = 3000;
 async function fetchWithRetry(url: string): Promise<any> {
   for (let attempt = 0; attempt <= PULL_MAX_RETRIES; attempt++) {
     try {
-      const res = await fetch(url);
+      const headers: Record<string, string> = {};
+      const tokens = getTokens();
+      if (tokens?.accessToken) {
+        headers['Authorization'] = `Bearer ${tokens.accessToken}`;
+      }
+      const res = await fetch(url, { headers });
       if (res.ok) {
         return res.json();
       }

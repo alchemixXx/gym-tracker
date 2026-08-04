@@ -3,6 +3,8 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { pool } from './db/pool.js';
+import { requireAuth } from './middleware/auth.js';
+import { authRoutes } from './routes/auth.js';
 import { userRoutes } from './routes/users.js';
 import { templateRoutes } from './routes/templates.js';
 import { programRoutes } from './routes/programs.js';
@@ -19,17 +21,36 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Routes
-app.use('/api/users', userRoutes);
-app.use('/api/users', templateRoutes);
-app.use('/api/users', programRoutes);
-app.use('/api/users', measurementRoutes);
-app.use('/api/users', foodRoutes);
-app.use('/api/users', photoRoutes);
-app.use('/api/users', syncRoutes);
+// Public routes (no auth required)
+app.use('/api/auth', authRoutes);
 
-// Serve photo images directly from DB
-app.use('/api/photos', photoImageRoutes);
+// Protected routes — require authentication
+// User CRUD (used for /api/users/me endpoint)
+app.use('/api/users', requireAuth, userRoutes);
+
+// All user-scoped data routes — require auth + ownership
+// These routes all use /:userId/... paths internally
+const protectedUserData = express.Router({ mergeParams: true });
+protectedUserData.use(requireAuth);
+protectedUserData.param('userId', (req, res, next, userId) => {
+  if (!req.auth) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  if (parseInt(userId, 10) !== req.auth.sub) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+  next();
+});
+protectedUserData.use(templateRoutes);
+protectedUserData.use(programRoutes);
+protectedUserData.use(measurementRoutes);
+protectedUserData.use(foodRoutes);
+protectedUserData.use(photoRoutes);
+protectedUserData.use(syncRoutes);
+app.use('/api/users', protectedUserData);
+
+// Serve photo images directly from DB (protected)
+app.use('/api/photos', requireAuth, photoImageRoutes);
 
 // Health check
 app.get('/api/health', async (_req, res) => {
