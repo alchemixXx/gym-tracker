@@ -1,5 +1,5 @@
 import { db, type DbSyncQueueItem, type SyncAction } from './index';
-import { api, getBaseUrl, getTokens } from '../api';
+import { api, getBaseUrl, getTokens, setTokens } from '../api';
 import { ref } from 'vue';
 
 /** Reactive sync state */
@@ -45,6 +45,35 @@ async function fetchWithRetry(url: string): Promise<any> {
       if (res.ok) {
         return res.json();
       }
+
+      // Handle 401 — try to refresh token and retry the request
+      if (res.status === 401) {
+        const currentTokens = getTokens();
+        if (currentTokens?.refreshToken) {
+          const refreshRes = await fetch(`${getBaseUrl()}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken: currentTokens.refreshToken }),
+          });
+          if (refreshRes.ok) {
+            const data = await refreshRes.json();
+            setTokens({
+              accessToken: data.accessToken,
+              refreshToken: data.refreshToken,
+            });
+            // Retry the original request with new token
+            const retryRes = await fetch(url, {
+              headers: { Authorization: `Bearer ${data.accessToken}` },
+            });
+            if (retryRes.ok) {
+              return retryRes.json();
+            }
+          }
+        }
+        // Refresh failed or no refresh token — throw immediately, don't retry
+        throw new Error(`Sync pull failed: ${res.status}`);
+      }
+
       // Server error (502/503/504) — retry
       if (res.status === 502 || res.status === 503 || res.status === 504) {
         if (attempt < PULL_MAX_RETRIES) {
