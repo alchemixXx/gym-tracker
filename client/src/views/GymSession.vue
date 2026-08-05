@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref, computed, onUnmounted } from 'vue';
+import { onMounted, ref, computed, onUnmounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import * as offlineApi from '@/db/offlineApi';
+import { lastSyncAt } from '@/db/sync';
 
 const route = useRoute();
 const router = useRouter();
@@ -12,8 +13,8 @@ const day = ref<any>(null);
 const dayNote = ref('');
 const exerciseNotes = ref<Record<number, string>>({});
 
-const programId = Number(route.params.id);
-const dayId = Number(route.params.dayId);
+let programId = Number(route.params.id);
+let dayId = Number(route.params.dayId);
 const userId = computed(() => userStore.currentUser!.id);
 
 // Rest timer
@@ -63,6 +64,34 @@ onMounted(async () => {
     dayNote.value = day.value.day_note || '';
     for (const ex of day.value.exercises) {
       if (ex.note) exerciseNotes.value[ex.id] = ex.note;
+    }
+  }
+});
+
+// Handle temp ID → real ID replacement during active session
+watch(lastSyncAt, async () => {
+  if (programId >= 0) return; // Only relevant for temp-ID programs
+  // Our temp-ID program was likely replaced — find it by name
+  const allPrograms = await offlineApi.getPrograms(userId.value);
+  const match = allPrograms.find(
+    (p: any) => p.name === program.value?.name && p.id > 0,
+  );
+  if (match) {
+    const fullProgram = await offlineApi.getProgram(userId.value, match.id);
+    if (fullProgram) {
+      // Find the corresponding day by sort_order
+      const oldDay = day.value;
+      const newDay = fullProgram.days.find(
+        (d: any) => d.sort_order === oldDay?.sort_order,
+      );
+      if (newDay) {
+        programId = fullProgram.id;
+        dayId = newDay.id;
+        program.value = fullProgram;
+        day.value = newDay;
+        // Update route without triggering navigation
+        router.replace(`/programs/${programId}/session/${dayId}`);
+      }
     }
   }
 });

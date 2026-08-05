@@ -29,8 +29,8 @@ onMounted(() => {
   }
   applyDarkMode();
 
-  // Start auto-sync background service
-  startAutoSync();
+  // Start auto-sync background service (pass userId if already logged in)
+  startAutoSync(authStore.user?.id);
 
   // If user already logged in and online, sync
   if (authStore.user && isOnline.value) {
@@ -43,6 +43,7 @@ watch(
   () => authStore.user,
   (user) => {
     if (user && isOnline.value) {
+      startAutoSync(user.id);
       triggerSync(user.id);
     }
   },

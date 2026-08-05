@@ -3,6 +3,7 @@ import { onMounted, ref, watch, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import * as offlineApi from '@/db/offlineApi';
+import { lastSyncAt } from '@/db/sync';
 
 const route = useRoute();
 const router = useRouter();
@@ -18,6 +19,29 @@ const dayHistoryLoading = ref<Record<number, boolean>>({});
 
 onMounted(async () => {
   await loadProgram();
+});
+
+// Re-load after sync — handles temp ID → real ID replacement
+watch(lastSyncAt, async () => {
+  const currentId = Number(route.params.id);
+  const reloaded = await offlineApi.getProgram(
+    userStore.currentUser!.id,
+    currentId,
+  );
+  if (reloaded) {
+    program.value = reloaded;
+  } else if (currentId < 0) {
+    // Temp-ID program was replaced by real-ID version — find it by name
+    const allPrograms = await offlineApi.getPrograms(userStore.currentUser!.id);
+    const match = allPrograms.find(
+      (p: any) => p.name === program.value?.name && p.id > 0,
+    );
+    if (match) {
+      router.replace(`/programs/${match.id}`);
+    } else {
+      router.replace('/programs');
+    }
+  }
 });
 
 async function loadProgram() {
