@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
+import { onSessionExpired, isAuthenticated } from '@/api';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -8,14 +9,22 @@ const router = createRouter({
       redirect: '/programs',
     },
     {
+      path: '/login',
+      name: 'login',
+      component: () => import('@/views/Login.vue'),
+      meta: { public: true },
+    },
+    {
       path: '/auth/verify',
       name: 'auth-verify',
       component: () => import('@/views/AuthVerify.vue'),
+      meta: { public: true },
     },
     {
       path: '/auth/claim',
       name: 'auth-claim',
       component: () => import('@/views/ClaimAccount.vue'),
+      meta: { public: true },
     },
     {
       path: '/programs',
@@ -63,6 +72,25 @@ const router = createRouter({
       component: () => import('@/views/Settings.vue'),
     },
   ],
+});
+
+// --- Navigation guard: redirect to login if not authenticated ---
+router.beforeEach((to) => {
+  if (to.meta.public) return true;
+  if (!isAuthenticated()) {
+    return { name: 'login', query: { redirect: to.fullPath } };
+  }
+  return true;
+});
+
+// --- Global session-expired handler: force logout + redirect ---
+onSessionExpired(() => {
+  // Dynamically import to avoid circular dependency with pinia (store needs app context)
+  import('@/stores/auth').then(({ useAuthStore }) => {
+    const authStore = useAuthStore();
+    authStore.logout();
+    router.replace({ name: 'login' });
+  });
 });
 
 export default router;

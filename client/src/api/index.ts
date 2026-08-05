@@ -40,6 +40,7 @@ if (stored) {
 export function setTokens(pair: TokenPair) {
   tokens = pair;
   localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(pair));
+  sessionExpiredFired = false; // Reset on new login/refresh
 }
 
 export function getTokens(): TokenPair | null {
@@ -53,6 +54,29 @@ export function clearTokens() {
 
 export function isAuthenticated(): boolean {
   return tokens !== null;
+}
+
+// --- Session expiry callback ---
+// Called when a 401 occurs and token refresh fails (unrecoverable auth failure).
+// Registered externally (e.g. by the router plugin) to trigger logout + redirect.
+let onSessionExpiredCallback: (() => void) | null = null;
+let sessionExpiredFired = false;
+
+export function onSessionExpired(cb: () => void) {
+  onSessionExpiredCallback = cb;
+}
+
+function notifySessionExpired() {
+  if (sessionExpiredFired) return; // Only fire once per session
+  sessionExpiredFired = true;
+  if (onSessionExpiredCallback) {
+    onSessionExpiredCallback();
+  }
+}
+
+/** Reset the session-expired flag (call after successful login) */
+export function resetSessionExpired() {
+  sessionExpiredFired = false;
 }
 
 // Flag to prevent multiple simultaneous refresh calls
@@ -152,7 +176,14 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
             }
             return retryRes.json();
           }
-          // Refresh failed — throw to trigger logout in the app
+          // Refresh failed — session is dead, notify and throw
+          notifySessionExpired();
+          throw new Error('Session expired');
+        }
+
+        // 401 with no refresh token — session is invalid
+        if (res.status === 401) {
+          notifySessionExpired();
           throw new Error('Session expired');
         }
 
@@ -210,6 +241,12 @@ async function uploadRequest<T>(url: string, options: RequestInit): Promise<T> {
       if (!retryRes.ok) throw new Error('Upload failed');
       return retryRes.json();
     }
+    notifySessionExpired();
+    throw new Error('Session expired');
+  }
+
+  if (res.status === 401) {
+    notifySessionExpired();
     throw new Error('Session expired');
   }
 

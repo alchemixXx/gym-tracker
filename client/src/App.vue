@@ -11,7 +11,6 @@ import {
   syncState,
   pendingCount,
 } from '@/db/sync';
-import Login from '@/views/Login.vue';
 
 const authStore = useAuthStore();
 const route = useRoute();
@@ -123,6 +122,7 @@ function goToSettings() {
 function handleLogout() {
   profileMenuOpen.value = false;
   authStore.logout();
+  router.replace({ name: 'login' });
 }
 
 onBeforeUnmount(() => {
@@ -172,10 +172,8 @@ onBeforeUnmount(() => {
   </div>
 
   <div v-else class="min-h-screen">
-    <!-- Auth gate: show login if not authenticated -->
-    <Login v-if="!authStore.isLoggedIn && !route.path.startsWith('/auth')" />
-    <!-- Magic link verification route is handled by the router -->
-    <router-view v-else-if="route.path.startsWith('/auth')" />
+    <!-- Public routes (login, auth verify/claim) — render without layout -->
+    <router-view v-if="route.meta.public" />
     <template v-else>
       <!-- Header -->
       <header
