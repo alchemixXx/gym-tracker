@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, onBeforeUnmount } from 'vue';
 import { useAuthStore } from '@/stores/auth';
 import { serverWaking } from '@/api';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useOnline } from '@/composables/useOnline';
 import {
   pullAllData,
@@ -15,9 +15,11 @@ import Login from '@/views/Login.vue';
 
 const authStore = useAuthStore();
 const route = useRoute();
+const router = useRouter();
 const { isOnline } = useOnline();
 const darkMode = ref(false);
 const initialSyncing = ref(false);
+const profileMenuOpen = ref(false);
 
 onMounted(() => {
   // Check system preference or stored preference
@@ -28,6 +30,9 @@ onMounted(() => {
     darkMode.value = window.matchMedia('(prefers-color-scheme: dark)').matches;
   }
   applyDarkMode();
+
+  // Close profile menu on outside click
+  document.addEventListener('click', closeProfileMenu);
 
   // Start auto-sync background service (pass userId if already logged in)
   startAutoSync(authStore.user?.id);
@@ -98,6 +103,31 @@ const navLinks = [
 function isActive(path: string) {
   return route.path.startsWith(path);
 }
+
+function toggleProfileMenu() {
+  profileMenuOpen.value = !profileMenuOpen.value;
+}
+
+function closeProfileMenu(e: MouseEvent) {
+  const target = e.target as HTMLElement;
+  if (!target.closest('.profile-menu-wrapper')) {
+    profileMenuOpen.value = false;
+  }
+}
+
+function goToSettings() {
+  profileMenuOpen.value = false;
+  router.push('/settings');
+}
+
+function handleLogout() {
+  profileMenuOpen.value = false;
+  authStore.logout();
+}
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', closeProfileMenu);
+});
 </script>
 
 <template>
@@ -213,17 +243,68 @@ function isActive(path: string) {
               <span v-if="darkMode" class="text-sm">☀️</span>
               <span v-else class="text-sm">🌙</span>
             </button>
-            <button
-              @click="authStore.logout()"
-              class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm text-white/90 transition-colors"
-            >
-              <span
-                class="w-6 h-6 rounded-full bg-blue-500/50 flex items-center justify-center text-xs font-bold"
+            <div class="relative profile-menu-wrapper">
+              <button
+                @click.stop="toggleProfileMenu"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm text-white/90 transition-colors"
               >
-                {{ authStore.user!.name.charAt(0).toUpperCase() }}
-              </span>
-              <span class="hidden sm:inline">{{ authStore.user!.name }}</span>
-            </button>
+                <span
+                  class="w-6 h-6 rounded-full bg-blue-500/50 flex items-center justify-center text-xs font-bold"
+                >
+                  {{ authStore.user!.name.charAt(0).toUpperCase() }}
+                </span>
+                <span class="hidden sm:inline">{{ authStore.user!.name }}</span>
+              </button>
+              <!-- Dropdown menu -->
+              <div
+                v-if="profileMenuOpen"
+                class="absolute right-0 top-full mt-2 w-44 rounded-lg bg-white dark:bg-gray-800 shadow-lg ring-1 ring-black/10 dark:ring-white/10 py-1 z-50"
+              >
+                <button
+                  @click="goToSettings"
+                  class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
+                >
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                    />
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                    />
+                  </svg>
+                  Налаштування
+                </button>
+                <button
+                  @click="handleLogout"
+                  class="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
+                >
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                    />
+                  </svg>
+                  Вийти
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </header>
