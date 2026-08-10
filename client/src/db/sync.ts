@@ -1,6 +1,21 @@
 import { db, type DbSyncQueueItem, type SyncAction } from './index';
-import { api, getBaseUrl, getTokens, setTokens } from '../api';
+import {
+  api,
+  getBaseUrl,
+  getTokens,
+  setTokens,
+  clearTokens,
+  notifySessionExpired,
+} from '../api';
 import { ref } from 'vue';
+
+/** Tracks whether the session is dead (refresh failed) to stop all sync attempts */
+let sessionDead = false;
+
+/** Reset session-dead flag (called after successful login) */
+export function resetSyncSessionState() {
+  sessionDead = false;
+}
 
 /** Reactive sync state */
 export const syncState = ref<'idle' | 'syncing' | 'error'>('idle');
@@ -35,6 +50,11 @@ const PULL_RETRY_DELAY_MS = 3000;
 
 async function fetchWithRetry(url: string): Promise<any> {
   for (let attempt = 0; attempt <= PULL_MAX_RETRIES; attempt++) {
+    // If session is dead, don't attempt any requests
+    if (sessionDead) {
+      throw new Error('Session expired');
+    }
+
     try {
       const headers: Record<string, string> = {};
       const tokens = getTokens();
@@ -70,8 +90,11 @@ async function fetchWithRetry(url: string): Promise<any> {
             }
           }
         }
-        // Refresh failed or no refresh token — throw immediately, don't retry
-        throw new Error(`Sync pull failed: ${res.status}`);
+        // Refresh failed or no refresh token — session is dead
+        sessionDead = true;
+        clearTokens();
+        notifySessionExpired();
+        throw new Error('Session expired');
       }
 
       // Server error (502/503/504) — retry
@@ -83,6 +106,8 @@ async function fetchWithRetry(url: string): Promise<any> {
       }
       throw new Error(`Sync pull failed: ${res.status}`);
     } catch (err: any) {
+      // Session expired — don't retry, propagate immediately
+      if (err.message === 'Session expired') throw err;
       // Network error (server unreachable) — retry
       if (err.message?.includes('Sync pull failed')) throw err;
       if (attempt < PULL_MAX_RETRIES) {
@@ -303,6 +328,8 @@ export async function pushPendingChanges(): Promise<void> {
 }
 
 async function doPush(): Promise<void> {
+  if (sessionDead) return;
+
   const items = await db.syncQueue.orderBy('id').toArray();
   if (items.length === 0) return;
 
@@ -312,10 +339,18 @@ async function doPush(): Promise<void> {
   const idMap: IdMap = new Map();
 
   for (const item of items) {
+    if (sessionDead) break; // Stop if session died mid-push
+
     try {
       await replayAction(item, idMap);
       await db.syncQueue.delete(item.id!);
-    } catch (err) {
+    } catch (err: any) {
+      // If session expired, stop the whole push — don't retry
+      if (err.message === 'Session expired') {
+        sessionDead = true;
+        notifySessionExpired();
+        break;
+      }
       // Increment retry count
       const retries = item.retries + 1;
       if (retries >= MAX_RETRIES) {
@@ -501,6 +536,9 @@ let currentUserId: number | null = null;
 export function startAutoSync(userId?: number): void {
   if (userId) currentUserId = userId;
 
+  // Reset session-dead flag on (re)start (e.g. after fresh login)
+  sessionDead = false;
+
   // Listen for online events
   window.addEventListener('online', onOnline);
 
@@ -509,11 +547,13 @@ export function startAutoSync(userId?: number): void {
 
   // Periodic sync every 30s when online — push AND pull
   syncInterval = setInterval(async () => {
+    if (sessionDead) return; // Don't sync if session is expired
     if (navigator.onLine && currentUserId) {
       try {
         await pushPendingChanges();
         await pullAllData(currentUserId);
-      } catch (e) {
+      } catch (e: any) {
+        if (e.message === 'Session expired') return; // Stop silently
         console.error('Periodic sync error:', e);
       }
     }
@@ -533,18 +573,21 @@ export function stopAutoSync(): void {
 }
 
 async function onOnline(): Promise<void> {
+  if (sessionDead) return;
   // Push queued changes, then pull fresh data
   try {
     await pushPendingChanges();
     if (currentUserId) {
       await pullAllData(currentUserId);
     }
-  } catch (e) {
+  } catch (e: any) {
+    if (e.message === 'Session expired') return;
     console.error('Online sync error:', e);
   }
 }
 
 async function onVisibilityChange(): Promise<void> {
+  if (sessionDead) return;
   // When the tab/app becomes visible, pull fresh data from server
   if (
     document.visibilityState === 'visible' &&
@@ -554,7 +597,8 @@ async function onVisibilityChange(): Promise<void> {
     try {
       await pushPendingChanges();
       await pullAllData(currentUserId);
-    } catch (e) {
+    } catch (e: any) {
+      if (e.message === 'Session expired') return;
       console.error('Visibility sync error:', e);
     }
   }

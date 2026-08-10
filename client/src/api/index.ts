@@ -66,7 +66,7 @@ export function onSessionExpired(cb: () => void) {
   onSessionExpiredCallback = cb;
 }
 
-function notifySessionExpired() {
+export function notifySessionExpired() {
   if (sessionExpiredFired) return; // Only fire once per session
   sessionExpiredFired = true;
   if (onSessionExpiredCallback) {

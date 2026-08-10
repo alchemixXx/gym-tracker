@@ -10,7 +10,10 @@ export const authRoutes = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
 const ACCESS_TOKEN_EXPIRY = '15m';
-const REFRESH_TOKEN_DAYS = 90;
+const REFRESH_TOKEN_DAYS = parseInt(
+  process.env.REFRESH_TOKEN_DAYS || '180',
+  10,
+);
 const MAGIC_LINK_EXPIRY_MINUTES = 15;
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
