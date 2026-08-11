@@ -3,9 +3,9 @@ import {
   api,
   getBaseUrl,
   getTokens,
-  setTokens,
   clearTokens,
   notifySessionExpired,
+  refreshAccessToken,
 } from '../api';
 import { ref } from 'vue';
 
@@ -66,31 +66,27 @@ async function fetchWithRetry(url: string): Promise<any> {
         return res.json();
       }
 
-      // Handle 401 — try to refresh token and retry the request
+      // Handle 401 — use the shared refresh logic (deduplicates concurrent calls)
       if (res.status === 401) {
-        const currentTokens = getTokens();
-        if (currentTokens?.refreshToken) {
-          const refreshRes = await fetch(`${getBaseUrl()}/auth/refresh`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ refreshToken: currentTokens.refreshToken }),
+        const refreshed = await refreshAccessToken();
+        if (refreshed) {
+          // Retry the original request with new token
+          const newTokens = getTokens();
+          const retryRes = await fetch(url, {
+            headers: { Authorization: `Bearer ${newTokens!.accessToken}` },
           });
-          if (refreshRes.ok) {
-            const data = await refreshRes.json();
-            setTokens({
-              accessToken: data.accessToken,
-              refreshToken: data.refreshToken,
-            });
-            // Retry the original request with new token
-            const retryRes = await fetch(url, {
-              headers: { Authorization: `Bearer ${data.accessToken}` },
-            });
-            if (retryRes.ok) {
-              return retryRes.json();
-            }
+          if (retryRes.ok) {
+            return retryRes.json();
           }
+          // Retry failed after successful refresh — don't kill session,
+          // just let the outer retry loop handle it (token rotation race)
+          if (attempt < PULL_MAX_RETRIES) {
+            await new Promise((r) => setTimeout(r, PULL_RETRY_DELAY_MS));
+            continue;
+          }
+          throw new Error(`Sync pull failed: ${retryRes.status}`);
         }
-        // Refresh failed or no refresh token — session is dead
+        // Refresh itself failed — session is truly dead
         sessionDead = true;
         clearTokens();
         notifySessionExpired();

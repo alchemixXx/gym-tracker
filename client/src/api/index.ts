@@ -82,7 +82,7 @@ export function resetSessionExpired() {
 // Flag to prevent multiple simultaneous refresh calls
 let refreshPromise: Promise<boolean> | null = null;
 
-async function refreshAccessToken(): Promise<boolean> {
+export async function refreshAccessToken(): Promise<boolean> {
   if (!tokens?.refreshToken) return false;
 
   // Deduplicate concurrent refresh calls
