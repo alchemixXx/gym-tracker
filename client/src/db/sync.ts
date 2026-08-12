@@ -45,6 +45,9 @@ async function updatePendingCount(): Promise<void> {
 
 // ─── Full Pull (download all user data) ──────────────────────────────────────
 
+// Prevent concurrent pull calls from racing (similar to pushInProgress)
+let pullInProgress: Promise<void> | null = null;
+
 const PULL_MAX_RETRIES = 10;
 const PULL_RETRY_DELAY_MS = 3000;
 
@@ -117,6 +120,17 @@ async function fetchWithRetry(url: string): Promise<any> {
 }
 
 export async function pullAllData(userId: number): Promise<void> {
+  // Deduplicate concurrent pull calls
+  if (pullInProgress) return pullInProgress;
+  pullInProgress = doPull(userId);
+  try {
+    await pullInProgress;
+  } finally {
+    pullInProgress = null;
+  }
+}
+
+async function doPull(userId: number): Promise<void> {
   syncState.value = 'syncing';
   try {
     // Use retry logic to handle cold-starting servers (free hosting)
@@ -529,6 +543,26 @@ async function replayAction(
 let syncInterval: ReturnType<typeof setInterval> | null = null;
 let currentUserId: number | null = null;
 
+/** Guard against overlapping sync cycles (interval + visibility + online can overlap) */
+let syncCycleRunning = false;
+
+async function runSyncCycle(): Promise<void> {
+  if (sessionDead) return;
+  if (syncCycleRunning) return; // Previous cycle still in progress — skip
+  if (!navigator.onLine || !currentUserId) return;
+
+  syncCycleRunning = true;
+  try {
+    await pushPendingChanges();
+    await pullAllData(currentUserId);
+  } catch (e: any) {
+    if (e.message === 'Session expired') return;
+    console.error('Sync cycle error:', e);
+  } finally {
+    syncCycleRunning = false;
+  }
+}
+
 export function startAutoSync(userId?: number): void {
   if (userId) currentUserId = userId;
 
@@ -542,17 +576,11 @@ export function startAutoSync(userId?: number): void {
   document.addEventListener('visibilitychange', onVisibilityChange);
 
   // Periodic sync every 30s when online — push AND pull
+  // Skip when page is hidden to avoid wasting refresh token rotations
+  // (e.g. overnight when server is sleeping on free tier)
   syncInterval = setInterval(async () => {
-    if (sessionDead) return; // Don't sync if session is expired
-    if (navigator.onLine && currentUserId) {
-      try {
-        await pushPendingChanges();
-        await pullAllData(currentUserId);
-      } catch (e: any) {
-        if (e.message === 'Session expired') return; // Stop silently
-        console.error('Periodic sync error:', e);
-      }
-    }
+    if (document.visibilityState === 'hidden') return;
+    await runSyncCycle();
   }, 30_000);
 
   // Init pending count
@@ -569,33 +597,11 @@ export function stopAutoSync(): void {
 }
 
 async function onOnline(): Promise<void> {
-  if (sessionDead) return;
-  // Push queued changes, then pull fresh data
-  try {
-    await pushPendingChanges();
-    if (currentUserId) {
-      await pullAllData(currentUserId);
-    }
-  } catch (e: any) {
-    if (e.message === 'Session expired') return;
-    console.error('Online sync error:', e);
-  }
+  await runSyncCycle();
 }
 
 async function onVisibilityChange(): Promise<void> {
-  if (sessionDead) return;
-  // When the tab/app becomes visible, pull fresh data from server
-  if (
-    document.visibilityState === 'visible' &&
-    navigator.onLine &&
-    currentUserId
-  ) {
-    try {
-      await pushPendingChanges();
-      await pullAllData(currentUserId);
-    } catch (e: any) {
-      if (e.message === 'Session expired') return;
-      console.error('Visibility sync error:', e);
-    }
+  if (document.visibilityState === 'visible') {
+    await runSyncCycle();
   }
 }

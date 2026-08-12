@@ -97,6 +97,24 @@ export async function refreshAccessToken(): Promise<boolean> {
       });
 
       if (!res.ok) {
+        // Server might be cold-starting (free tier) — retry once after a delay
+        // before giving up on the refresh token
+        if (res.status === 502 || res.status === 503 || res.status === 504) {
+          await new Promise((r) => setTimeout(r, 3000));
+          const retryRes = await fetch(`${BASE_URL}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken: tokens!.refreshToken }),
+          });
+          if (retryRes.ok) {
+            const data = await retryRes.json();
+            setTokens({
+              accessToken: data.accessToken,
+              refreshToken: data.refreshToken,
+            });
+            return true;
+          }
+        }
         // Refresh token is invalid/expired — force logout
         clearTokens();
         return false;
@@ -109,6 +127,8 @@ export async function refreshAccessToken(): Promise<boolean> {
       });
       return true;
     } catch {
+      // Network error — don't clear tokens yet, might be temporary connectivity issue
+      // Return false but keep tokens so next attempt can retry
       return false;
     } finally {
       refreshPromise = null;
