@@ -8,7 +8,7 @@ export default defineConfig({
     vue(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico'],
+      includeAssets: ['logo.png'],
       manifest: {
         name: 'Тренування',
         short_name: 'Тренування',
@@ -19,6 +19,18 @@ export default defineConfig({
         orientation: 'portrait',
         start_url: '/',
         icons: [
+          {
+            src: '/icons/icon-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any maskable',
+          },
+          {
+            src: '/icons/icon-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any maskable',
+          },
           {
             src: '/icons/icon.svg',
             sizes: 'any',
