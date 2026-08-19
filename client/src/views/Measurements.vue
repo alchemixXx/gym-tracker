@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed, watch } from 'vue';
+import { onMounted, ref, computed, watch } from 'vue';
 import { useUserStore } from '@/stores/user';
 import * as offlineApi from '@/db/offlineApi';
-import { api, getBaseUrl, getTokens } from '@/api';
+import { api } from '@/api';
 import { useOnline } from '@/composables/useOnline';
 import { lastSyncAt } from '@/db/sync';
 
@@ -78,18 +78,10 @@ watch(lastSyncAt, () => {
   loadMeasurements();
 });
 
-// Load photos when coming back online
-watch(isOnline, (online) => {
-  if (online) {
-    loadPhotosForMeasurements();
-  }
-});
-
 async function loadMeasurements() {
   measurements.value = await offlineApi.getMeasurements(
     userStore.currentUser!.id,
   );
-  loadPhotosForMeasurements();
 }
 
 function addEntry() {
@@ -155,53 +147,9 @@ async function deletePhoto(measurementId: number, photoId: number) {
   await loadMeasurements();
 }
 
-function photoUrl(photoId: number) {
-  return `${getBaseUrl()}/photos/${photoId}/image`;
+function openLightbox(url: string) {
+  lightboxSrc.value = url;
 }
-
-// Cache of blob URLs for photos (keyed by photo ID)
-const photoBlobUrls = ref<Record<number, string>>({});
-
-async function fetchPhotoBlobUrl(photoId: number): Promise<string | null> {
-  if (photoBlobUrls.value[photoId]) return photoBlobUrls.value[photoId];
-  try {
-    const tokens = getTokens();
-    const headers: Record<string, string> = {};
-    if (tokens?.accessToken) {
-      headers['Authorization'] = `Bearer ${tokens.accessToken}`;
-    }
-    const res = await fetch(photoUrl(photoId), { headers });
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    photoBlobUrls.value[photoId] = url;
-    return url;
-  } catch {
-    return null;
-  }
-}
-
-async function loadPhotosForMeasurements() {
-  if (!isOnline.value) return;
-  for (const m of measurements.value) {
-    if (m.photos && m.photos.length > 0) {
-      for (const photo of m.photos) {
-        fetchPhotoBlobUrl(photo.id);
-      }
-    }
-  }
-}
-
-function openLightbox(photoId: number) {
-  lightboxSrc.value = photoBlobUrls.value[photoId] || null;
-}
-
-// Revoke blob URLs on unmount to free memory
-onUnmounted(() => {
-  for (const url of Object.values(photoBlobUrls.value)) {
-    URL.revokeObjectURL(url);
-  }
-});
 function closeLightbox() {
   lightboxSrc.value = null;
 }
@@ -515,11 +463,11 @@ function formatDiff(diff: number): string {
               class="relative group"
             >
               <img
-                v-if="photoBlobUrls[photo.id]"
-                :src="photoBlobUrls[photo.id]"
+                v-if="photo.url"
+                :src="photo.url"
                 :alt="photo.original_name"
                 class="w-20 h-20 object-cover rounded-xl cursor-pointer border-2 border-transparent hover:border-teal-400 transition-all shadow-sm"
-                @click="openLightbox(photo.id)"
+                @click="openLightbox(photo.url)"
               />
               <div
                 v-else

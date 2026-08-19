@@ -84,6 +84,7 @@ export interface DbMeasurementPhotoMeta {
   id: number;
   original_name: string;
   mime_type: string;
+  url: string;
   created_at: string;
 }
 

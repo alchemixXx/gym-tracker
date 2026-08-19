@@ -10,7 +10,7 @@ import { templateRoutes } from './routes/templates.js';
 import { programRoutes } from './routes/programs.js';
 import { measurementRoutes } from './routes/measurements.js';
 import { foodRoutes } from './routes/food.js';
-import { photoRoutes, photoImageRoutes } from './routes/photos.js';
+import { photoRoutes } from './routes/photos.js';
 import { syncRoutes } from './routes/sync.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -48,9 +48,6 @@ protectedUserData.use(foodRoutes);
 protectedUserData.use(photoRoutes);
 protectedUserData.use(syncRoutes);
 app.use('/api/users', protectedUserData);
-
-// Serve photo images directly from DB (protected)
-app.use('/api/photos', requireAuth, photoImageRoutes);
 
 // Android App Links verification
 app.get('/.well-known/assetlinks.json', (_req, res) => {

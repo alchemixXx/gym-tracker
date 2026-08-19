@@ -2,8 +2,9 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import { pool } from '../db/pool.js';
+import { uploadToR2, deleteFromR2 } from '../services/storage.js';
 
-// Use memory storage — files are kept in buffer, not written to disk
+// Use memory storage — files are kept in buffer before uploading to R2
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
@@ -18,7 +19,6 @@ const upload = multer({
 });
 
 export const photoRoutes = Router();
-export const photoImageRoutes = Router();
 
 // POST /api/users/:userId/measurements/:measurementId/photos — upload photos
 photoRoutes.post(
@@ -40,21 +40,33 @@ photoRoutes.post(
 
       const saved = [];
       for (const file of files) {
+        // Upload to Cloudflare R2
+        const { key, url } = await uploadToR2(
+          file.buffer,
+          file.originalname,
+          file.mimetype,
+          parseInt(userId, 10),
+        );
+
+        // Store reference in DB (no binary data)
         const result = await pool.query(
-          'INSERT INTO measurement_photos (measurement_id, original_name, data, mime_type) VALUES ($1, $2, $3, $4) RETURNING id, measurement_id, original_name, mime_type, created_at',
-          [measurementId, file.originalname, file.buffer, file.mimetype],
+          `INSERT INTO measurement_photos (measurement_id, original_name, mime_type, storage_key, url)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id, measurement_id, original_name, mime_type, url, created_at`,
+          [measurementId, file.originalname, file.mimetype, key, url],
         );
         saved.push(result.rows[0]);
       }
 
       res.status(201).json(saved);
     } catch (error) {
+      console.error('Photo upload error:', error);
       res.status(500).json({ error: 'Failed to upload photos' });
     }
   },
 );
 
-// GET /api/users/:userId/measurements/:measurementId/photos — list photos (metadata only)
+// GET /api/users/:userId/measurements/:measurementId/photos — list photos (metadata + url)
 photoRoutes.get(
   '/:userId/measurements/:measurementId/photos',
   async (req, res) => {
@@ -69,7 +81,7 @@ photoRoutes.get(
       }
 
       const result = await pool.query(
-        'SELECT id, measurement_id, original_name, mime_type, created_at FROM measurement_photos WHERE measurement_id = $1 ORDER BY created_at',
+        'SELECT id, measurement_id, original_name, mime_type, url, created_at FROM measurement_photos WHERE measurement_id = $1 ORDER BY created_at',
         [measurementId],
       );
       res.json(result.rows);
@@ -79,49 +91,41 @@ photoRoutes.get(
   },
 );
 
-// GET /api/photos/:photoId/image — serve photo binary from DB
-photoImageRoutes.get('/:photoId/image', async (req, res) => {
-  const { photoId } = req.params;
-  try {
-    const result = await pool.query(
-      'SELECT data, mime_type, original_name FROM measurement_photos WHERE id = $1',
-      [photoId],
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Photo not found' });
-    }
-
-    const { data, mime_type, original_name } = result.rows[0];
-    res.set('Content-Type', mime_type || 'image/jpeg');
-    res.set('Cache-Control', 'public, max-age=31536000, immutable');
-    res.send(data);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to serve photo' });
-  }
-});
-
 // DELETE /api/users/:userId/measurements/:measurementId/photos/:photoId
 photoRoutes.delete(
   '/:userId/measurements/:measurementId/photos/:photoId',
   async (req, res) => {
     const { userId, measurementId, photoId } = req.params;
     try {
+      // Fetch the storage key before deleting
       const result = await pool.query(
-        `DELETE FROM measurement_photos mp
-         USING body_measurements bm
+        `SELECT mp.id, mp.storage_key
+         FROM measurement_photos mp
+         JOIN body_measurements bm ON bm.id = mp.measurement_id
          WHERE mp.id = $1
            AND mp.measurement_id = $2
-           AND bm.id = mp.measurement_id
-           AND bm.user_id = $3
-         RETURNING mp.id`,
+           AND bm.user_id = $3`,
         [photoId, measurementId, userId],
       );
       if (result.rows.length === 0) {
         return res.status(404).json({ error: 'Photo not found' });
       }
 
+      const { storage_key } = result.rows[0];
+
+      // Delete from R2
+      if (storage_key) {
+        await deleteFromR2(storage_key);
+      }
+
+      // Delete from DB
+      await pool.query('DELETE FROM measurement_photos WHERE id = $1', [
+        photoId,
+      ]);
+
       res.json({ message: 'Photo deleted' });
     } catch (error) {
+      console.error('Photo delete error:', error);
       res.status(500).json({ error: 'Failed to delete photo' });
     }
   },

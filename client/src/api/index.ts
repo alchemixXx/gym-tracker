@@ -79,16 +79,28 @@ export function resetSessionExpired() {
   sessionExpiredFired = false;
 }
 
-// Flag to prevent multiple simultaneous refresh calls
-let refreshPromise: Promise<boolean> | null = null;
+/**
+ * Refresh result lets callers distinguish between:
+ * - 'success': new tokens obtained
+ * - 'rejected': server explicitly rejected the refresh token (401) — session is dead
+ * - 'unavailable': network error or server temporarily down — safe to retry later
+ */
+export type RefreshResult = 'success' | 'rejected' | 'unavailable';
 
 export async function refreshAccessToken(): Promise<boolean> {
-  if (!tokens?.refreshToken) return false;
+  const result = await refreshAccessTokenDetailed();
+  return result === 'success';
+}
+
+let refreshDetailedPromise: Promise<RefreshResult> | null = null;
+
+export async function refreshAccessTokenDetailed(): Promise<RefreshResult> {
+  if (!tokens?.refreshToken) return 'rejected';
 
   // Deduplicate concurrent refresh calls
-  if (refreshPromise) return refreshPromise;
+  if (refreshDetailedPromise) return refreshDetailedPromise;
 
-  refreshPromise = (async () => {
+  refreshDetailedPromise = (async (): Promise<RefreshResult> => {
     try {
       const res = await fetch(`${BASE_URL}/auth/refresh`, {
         method: 'POST',
@@ -97,8 +109,7 @@ export async function refreshAccessToken(): Promise<boolean> {
       });
 
       if (!res.ok) {
-        // Server might be cold-starting (free tier) — retry once after a delay
-        // before giving up on the refresh token
+        // Server might be restarting (deploy / cold start) — retry once
         if (res.status === 502 || res.status === 503 || res.status === 504) {
           await new Promise((r) => setTimeout(r, 3000));
           const retryRes = await fetch(`${BASE_URL}/auth/refresh`, {
@@ -112,12 +123,26 @@ export async function refreshAccessToken(): Promise<boolean> {
               accessToken: data.accessToken,
               refreshToken: data.refreshToken,
             });
-            return true;
+            return 'success';
+          }
+          // Still failing after retry — server is unavailable, don't nuke tokens
+          if (
+            retryRes.status === 502 ||
+            retryRes.status === 503 ||
+            retryRes.status === 504
+          ) {
+            return 'unavailable';
           }
         }
-        // Refresh token is invalid/expired — force logout
-        clearTokens();
-        return false;
+
+        // 401 or 403 = server explicitly said the token is invalid/revoked
+        if (res.status === 401 || res.status === 403) {
+          clearTokens();
+          return 'rejected';
+        }
+
+        // Any other error (500, 429, etc.) — treat as transient, keep tokens
+        return 'unavailable';
       }
 
       const data = await res.json();
@@ -125,17 +150,16 @@ export async function refreshAccessToken(): Promise<boolean> {
         accessToken: data.accessToken,
         refreshToken: data.refreshToken,
       });
-      return true;
+      return 'success';
     } catch {
-      // Network error — don't clear tokens yet, might be temporary connectivity issue
-      // Return false but keep tokens so next attempt can retry
-      return false;
+      // Network error (server unreachable during deploy) — don't clear tokens
+      return 'unavailable';
     } finally {
-      refreshPromise = null;
+      refreshDetailedPromise = null;
     }
   })();
 
-  return refreshPromise;
+  return refreshDetailedPromise;
 }
 
 // --- Request helper ---
@@ -176,8 +200,8 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
         // Handle 401 — try to refresh token and retry once
         if (res.status === 401 && tokens?.refreshToken) {
-          const refreshed = await refreshAccessToken();
-          if (refreshed) {
+          const result = await refreshAccessTokenDetailed();
+          if (result === 'success') {
             // Retry the original request with new token
             const retryHeaders: Record<string, string> = {
               'Content-Type': 'application/json',
@@ -196,9 +220,17 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
             }
             return retryRes.json();
           }
-          // Refresh failed — session is dead, notify and throw
-          notifySessionExpired();
-          throw new Error('Session expired');
+          if (result === 'rejected') {
+            // Server explicitly rejected the token — session is truly dead
+            notifySessionExpired();
+            throw new Error('Session expired');
+          }
+          // result === 'unavailable' — server is temporarily down, retry the whole request
+          if (attempt < MAX_RETRIES) {
+            await sleep(RETRY_DELAY_MS);
+            continue;
+          }
+          throw new Error('Server unavailable');
         }
 
         // 401 with no refresh token — session is invalid

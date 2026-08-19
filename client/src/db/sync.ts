@@ -6,6 +6,7 @@ import {
   clearTokens,
   notifySessionExpired,
   refreshAccessToken,
+  refreshAccessTokenDetailed,
 } from '../api';
 import { ref } from 'vue';
 
@@ -71,8 +72,8 @@ async function fetchWithRetry(url: string): Promise<any> {
 
       // Handle 401 — use the shared refresh logic (deduplicates concurrent calls)
       if (res.status === 401) {
-        const refreshed = await refreshAccessToken();
-        if (refreshed) {
+        const result = await refreshAccessTokenDetailed();
+        if (result === 'success') {
           // Retry the original request with new token
           const newTokens = getTokens();
           const retryRes = await fetch(url, {
@@ -89,11 +90,20 @@ async function fetchWithRetry(url: string): Promise<any> {
           }
           throw new Error(`Sync pull failed: ${retryRes.status}`);
         }
-        // Refresh itself failed — session is truly dead
-        sessionDead = true;
-        clearTokens();
-        notifySessionExpired();
-        throw new Error('Session expired');
+        if (result === 'rejected') {
+          // Server explicitly rejected the refresh token — session is dead
+          sessionDead = true;
+          clearTokens();
+          notifySessionExpired();
+          throw new Error('Session expired');
+        }
+        // result === 'unavailable' — server is temporarily down (deploy restart)
+        // Don't kill the session, just retry the whole pull later
+        if (attempt < PULL_MAX_RETRIES) {
+          await new Promise((r) => setTimeout(r, PULL_RETRY_DELAY_MS));
+          continue;
+        }
+        throw new Error('Sync pull failed: server unavailable');
       }
 
       // Server error (502/503/504) — retry
@@ -359,6 +369,14 @@ async function doPush(): Promise<void> {
       if (err.message === 'Session expired') {
         sessionDead = true;
         notifySessionExpired();
+        break;
+      }
+      // Server temporarily unavailable (deploy restart) — stop pushing,
+      // but don't kill the session. We'll retry on the next sync cycle.
+      if (
+        err.message === 'Server unavailable' ||
+        err.message?.includes('Failed to fetch')
+      ) {
         break;
       }
       // Increment retry count
