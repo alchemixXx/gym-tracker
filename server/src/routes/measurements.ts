@@ -19,7 +19,7 @@ measurementRoutes.get('/:userId/measurements', async (req, res) => {
         [m.id],
       );
       const photos = await pool.query(
-        'SELECT id, measurement_id, original_name, mime_type, created_at FROM measurement_photos WHERE measurement_id = $1 ORDER BY created_at',
+        'SELECT id, measurement_id, original_name, mime_type, url, created_at FROM measurement_photos WHERE measurement_id = $1 ORDER BY created_at',
         [m.id],
       );
       measurements.push({ ...m, entries: entries.rows, photos: photos.rows });

@@ -147,7 +147,7 @@ syncRoutes.get('/:userId/sync', async (req, res) => {
         [m.id],
       );
       const photos = await pool.query(
-        'SELECT id, measurement_id, original_name, mime_type, created_at FROM measurement_photos WHERE measurement_id = $1 ORDER BY created_at',
+        'SELECT id, measurement_id, original_name, mime_type, url, created_at FROM measurement_photos WHERE measurement_id = $1 ORDER BY created_at',
         [m.id],
       );
 
@@ -167,6 +167,7 @@ syncRoutes.get('/:userId/sync', async (req, res) => {
           id: ph.id,
           original_name: ph.original_name,
           mime_type: ph.mime_type,
+          url: ph.url,
           created_at: ph.created_at?.toISOString?.() || ph.created_at,
         })),
       });
