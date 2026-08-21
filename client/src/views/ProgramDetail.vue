@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref, watch, computed } from 'vue';
+import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import * as offlineApi from '@/db/offlineApi';
-import { lastSyncAt } from '@/db/sync';
+import { lastSyncAt, pullPaused } from '@/db/sync';
 
 const route = useRoute();
 const router = useRouter();
@@ -21,8 +21,18 @@ onMounted(async () => {
   await loadProgram();
 });
 
+// Resume sync pulls if the component unmounts while still editing
+onBeforeUnmount(() => {
+  if (pullPaused.value) {
+    pullPaused.value = false;
+  }
+});
+
 // Re-load after sync — handles temp ID → real ID replacement
 watch(lastSyncAt, async () => {
+  // Don't overwrite in-progress edits with stale data from sync
+  if (editing.value) return;
+
   const currentId = Number(route.params.id);
   const reloaded = await offlineApi.getProgram(
     userStore.currentUser!.id,
@@ -84,9 +94,11 @@ function toggleDay(dayId: number) {
 }
 function enterEdit() {
   editing.value = true;
+  pullPaused.value = true;
 }
 function cancelEdit() {
   editing.value = false;
+  pullPaused.value = false;
   loadProgram();
 }
 function addDay() {
@@ -135,6 +147,7 @@ async function saveEdit() {
       },
     );
     editing.value = false;
+    pullPaused.value = false;
     await loadProgram();
   } finally {
     saving.value = false;

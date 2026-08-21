@@ -23,6 +23,12 @@ export const syncState = ref<'idle' | 'syncing' | 'error'>('idle');
 export const pendingCount = ref(0);
 export const lastSyncAt = ref<string | null>(null);
 
+/**
+ * When true, pullAllData() is skipped to avoid overwriting in-progress edits.
+ * Set by views that perform multi-field editing (e.g. ProgramDetail edit mode).
+ */
+export const pullPaused = ref(false);
+
 // ─── Queue Management ────────────────────────────────────────────────────────
 
 export async function enqueue(action: SyncAction, payload: any): Promise<void> {
@@ -130,6 +136,9 @@ async function fetchWithRetry(url: string): Promise<any> {
 }
 
 export async function pullAllData(userId: number): Promise<void> {
+  // Skip pull when a view is actively editing (avoids overwriting unsaved changes in IndexedDB)
+  if (pullPaused.value) return;
+
   // Deduplicate concurrent pull calls
   if (pullInProgress) return pullInProgress;
   pullInProgress = doPull(userId);
