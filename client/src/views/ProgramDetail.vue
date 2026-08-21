@@ -202,6 +202,27 @@ function formatHistoryDate(dateStr: string) {
   });
 }
 
+function formatDayDuration(day: any): string | null {
+  const seconds = day.duration_seconds;
+  if (!seconds || seconds <= 0) return null;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  const parts: string[] = [];
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0) parts.push(`${m}m`);
+  if (s > 0 || parts.length === 0) parts.push(`${s}s`);
+  return parts.join(' ');
+}
+
+function formatDayDate(day: any): string | null {
+  if (!day.completed_at) return null;
+  return new Date(day.completed_at).toLocaleDateString('uk', {
+    day: 'numeric',
+    month: 'short',
+  });
+}
+
 const isCompleted = () => program.value?.status === 'completed';
 
 async function finishProgram() {
@@ -641,6 +662,46 @@ async function exportProgram() {
                     />
                   </svg>
                 </div>
+                <p
+                  v-if="day.completed_at"
+                  class="text-xs text-gray-400 dark:text-gray-500 mt-1 flex items-center gap-2"
+                >
+                  <span class="flex items-center gap-0.5">
+                    <svg
+                      class="w-3 h-3"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                      />
+                    </svg>
+                    {{ formatDayDate(day) }}
+                  </span>
+                  <span
+                    v-if="formatDayDuration(day)"
+                    class="flex items-center gap-0.5"
+                  >
+                    <svg
+                      class="w-3 h-3"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    {{ formatDayDuration(day) }}
+                  </span>
+                </p>
                 <p
                   v-if="day.day_note"
                   class="text-xs text-gray-500 dark:text-gray-400 mt-1 italic truncate"

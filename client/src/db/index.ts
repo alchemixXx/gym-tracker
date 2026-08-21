@@ -58,7 +58,9 @@ export interface DbProgramDay {
   name: string;
   sort_order: number;
   day_note: string | null;
+  started_at: string | null;
   completed_at: string | null;
+  duration_seconds: number | null;
   exercises: DbProgramExercise[];
 }
 

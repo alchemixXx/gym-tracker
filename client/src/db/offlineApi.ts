@@ -155,7 +155,9 @@ export async function createProgram(userId: number, data: any) {
       name: d.name,
       sort_order: di,
       day_note: null,
+      started_at: null,
       completed_at: null,
+      duration_seconds: null,
       exercises: (d.exercises || []).map((e: any, ei: number) => ({
         id: nextTempId(),
         name: e.name,
@@ -201,7 +203,9 @@ export async function updateProgram(
       name: d.name,
       sort_order: completedDays.length + di,
       day_note: null,
+      started_at: null,
       completed_at: null,
+      duration_seconds: null,
       exercises: (d.exercises || []).map((e: any, ei: number) => ({
         id: nextTempId(),
         name: e.name,
@@ -253,7 +257,9 @@ export async function duplicateProgram(
       name: d.name,
       sort_order: di,
       day_note: null,
+      started_at: null,
       completed_at: null,
+      duration_seconds: null,
       exercises: d.exercises.map((e, ei) => ({
         id: nextTempId(),
         name: e.name,
@@ -302,7 +308,10 @@ export async function updateDay(
   if (!day) return;
 
   if (data.day_note !== undefined) day.day_note = data.day_note;
+  if (data.started_at !== undefined) day.started_at = data.started_at;
   if (data.completed_at !== undefined) day.completed_at = data.completed_at;
+  if (data.duration_seconds !== undefined)
+    day.duration_seconds = data.duration_seconds;
 
   program.updated_at = new Date().toISOString();
   await db.programs.put(program);

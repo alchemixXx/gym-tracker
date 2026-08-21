@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed, onUnmounted, watch } from 'vue';
+import { onMounted, onUnmounted, ref, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import * as offlineApi from '@/db/offlineApi';
@@ -17,11 +17,32 @@ let programId = Number(route.params.id);
 let dayId = Number(route.params.dayId);
 const userId = computed(() => userStore.currentUser!.id);
 
-// Rest timer
-const restTimer = ref(0);
-const restInterval = ref<number | null>(null);
-const restPresets = [60, 90, 120, 180];
-const showRestTimer = ref(false);
+// Timer
+const sessionStartedAt = ref<string | null>(null);
+const elapsedSeconds = ref(0);
+let timerInterval: ReturnType<typeof setInterval> | null = null;
+
+function startTimer() {
+  if (timerInterval) return;
+  timerInterval = setInterval(() => {
+    if (sessionStartedAt.value) {
+      elapsedSeconds.value = Math.floor(
+        (Date.now() - new Date(sessionStartedAt.value).getTime()) / 1000,
+      );
+    }
+  }, 1000);
+}
+
+function formatElapsed(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0)
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+const elapsedDisplay = computed(() => formatElapsed(elapsedSeconds.value));
 
 // Progress
 const totalSets = computed(() => {
@@ -65,6 +86,24 @@ onMounted(async () => {
     for (const ex of day.value.exercises) {
       if (ex.note) exerciseNotes.value[ex.id] = ex.note;
     }
+    // Start or resume timer
+    if (day.value.started_at) {
+      sessionStartedAt.value = day.value.started_at;
+    } else {
+      const now = new Date().toISOString();
+      sessionStartedAt.value = now;
+      await offlineApi.updateDay(userId.value, programId, dayId, {
+        started_at: now,
+      });
+    }
+    startTimer();
+  }
+});
+
+onUnmounted(() => {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
   }
 });
 
@@ -96,10 +135,6 @@ watch(lastSyncAt, async () => {
   }
 });
 
-onUnmounted(() => {
-  if (restInterval.value) clearInterval(restInterval.value);
-});
-
 function haptic() {
   if (navigator.vibrate) navigator.vibrate(10);
 }
@@ -107,10 +142,6 @@ function haptic() {
 async function toggleSet(exercise: any, set: any) {
   set.done = !set.done;
   haptic();
-  if (set.done) {
-    showRestTimer.value = true;
-    startRest(90);
-  }
   await offlineApi.updateSet(
     userId.value,
     programId,
@@ -138,6 +169,7 @@ async function finishSession() {
   await offlineApi.updateDay(userId.value, programId, dayId, {
     day_note: dayNote.value.trim(),
     completed_at: new Date().toISOString(),
+    duration_seconds: elapsedSeconds.value,
   });
   haptic();
   router.push(`/programs/${programId}`);
@@ -147,33 +179,6 @@ function formatSet(set: any) {
   const weight = set.weight ? `${set.weight} кг` : 'без ваги';
   if (set.count > 1) return `${weight} ${set.count}×${set.reps}`;
   return `${weight} × ${set.reps}`;
-}
-
-// Rest timer functions
-function startRest(seconds: number) {
-  if (restInterval.value) clearInterval(restInterval.value);
-  restTimer.value = seconds;
-  restInterval.value = window.setInterval(() => {
-    restTimer.value--;
-    if (restTimer.value <= 0) {
-      clearInterval(restInterval.value!);
-      restInterval.value = null;
-      haptic();
-    }
-  }, 1000);
-}
-
-function stopRest() {
-  if (restInterval.value) clearInterval(restInterval.value);
-  restInterval.value = null;
-  restTimer.value = 0;
-  showRestTimer.value = false;
-}
-
-function formatTime(seconds: number) {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
 }
 </script>
 
@@ -248,6 +253,24 @@ function formatTime(seconds: number) {
           підходів виконано
         </p>
         <p
+          class="text-sm text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1"
+        >
+          <svg
+            class="w-4 h-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          {{ elapsedDisplay }}
+        </p>
+        <p
           v-if="progressPercent === 100"
           class="text-sm text-emerald-600 dark:text-emerald-400 font-medium mt-1"
         >
@@ -255,77 +278,6 @@ function formatTime(seconds: number) {
         </p>
       </div>
     </div>
-
-    <!-- Rest Timer (floating) -->
-    <transition name="slide-up">
-      <div
-        v-if="showRestTimer && restTimer > 0"
-        class="card p-4 mb-4 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50"
-      >
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div
-              class="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center"
-            >
-              <span class="text-lg">⏱</span>
-            </div>
-            <div>
-              <p class="text-sm font-medium text-blue-800 dark:text-blue-200">
-                Відпочинок
-              </p>
-              <p
-                class="text-2xl font-bold text-blue-600 dark:text-blue-400 tabular-nums"
-              >
-                {{ formatTime(restTimer) }}
-              </p>
-            </div>
-          </div>
-          <button
-            @click="stopRest"
-            class="w-9 h-9 rounded-xl bg-blue-200 dark:bg-blue-800 hover:bg-blue-300 dark:hover:bg-blue-700 flex items-center justify-center transition-colors"
-          >
-            <svg
-              class="w-4 h-4 text-blue-700 dark:text-blue-300"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="2.5"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
-        </div>
-      </div>
-    </transition>
-
-    <!-- Rest Timer presets (when not running) -->
-    <transition name="slide-up">
-      <div v-if="showRestTimer && restTimer <= 0" class="card p-4 mb-4">
-        <p class="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
-          Таймер відпочинку:
-        </p>
-        <div class="flex gap-2">
-          <button
-            v-for="preset in restPresets"
-            :key="preset"
-            @click="startRest(preset)"
-            class="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-sm font-medium text-gray-700 dark:text-gray-300 transition-colors"
-          >
-            {{ formatTime(preset) }}
-          </button>
-        </div>
-        <button
-          @click="showRestTimer = false"
-          class="w-full mt-2 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 py-1"
-        >
-          Сховати
-        </button>
-      </div>
-    </transition>
 
     <!-- Exercises -->
     <div class="space-y-4 mb-6">

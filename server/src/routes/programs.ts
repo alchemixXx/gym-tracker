@@ -459,7 +459,9 @@ programRoutes.get('/:userId/programs/:id/export', async (req, res) => {
       days.push({
         name: day.name,
         day_note: day.day_note || null,
+        started_at: day.started_at || null,
         completed_at: day.completed_at || null,
+        duration_seconds: day.duration_seconds || null,
         exercises,
       });
     }
@@ -665,20 +667,22 @@ programRoutes.get(
   },
 );
 
-// PUT /api/users/:userId/programs/:id/days/:dayId — update day (note, completed)
+// PUT /api/users/:userId/programs/:id/days/:dayId — update day (note, completed, started, duration)
 programRoutes.put(
   '/:userId/programs/:programId/days/:dayId',
   async (req, res) => {
     const { dayId } = req.params;
-    const { day_note, completed_at } = req.body;
+    const { day_note, completed_at, started_at, duration_seconds } = req.body;
 
     try {
       const result = await pool.query(
         `UPDATE program_days SET 
         day_note = COALESCE($1, day_note),
-        completed_at = COALESCE($2, completed_at)
-      WHERE id = $3 RETURNING *`,
-        [day_note, completed_at, dayId],
+        completed_at = COALESCE($2, completed_at),
+        started_at = COALESCE($3, started_at),
+        duration_seconds = COALESCE($4, duration_seconds)
+      WHERE id = $5 RETURNING *`,
+        [day_note, completed_at, started_at, duration_seconds, dayId],
       );
       if (result.rows.length === 0) {
         return res.status(404).json({ error: 'Day not found' });
