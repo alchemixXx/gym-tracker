@@ -12,6 +12,7 @@ import { measurementRoutes } from './routes/measurements.js';
 import { foodRoutes } from './routes/food.js';
 import { photoRoutes } from './routes/photos.js';
 import { syncRoutes } from './routes/sync.js';
+import { analysisRoutes } from './routes/analysis.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -47,6 +48,7 @@ protectedUserData.use(measurementRoutes);
 protectedUserData.use(foodRoutes);
 protectedUserData.use(photoRoutes);
 protectedUserData.use(syncRoutes);
+protectedUserData.use(analysisRoutes);
 app.use('/api/users', protectedUserData);
 
 // Android App Links verification

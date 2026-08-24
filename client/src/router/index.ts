@@ -67,6 +67,11 @@ const router = createRouter({
       component: () => import('@/views/FoodDetail.vue'),
     },
     {
+      path: '/analysis',
+      name: 'analysis',
+      component: () => import('@/views/Analysis.vue'),
+    },
+    {
       path: '/settings',
       name: 'settings',
       component: () => import('@/views/Settings.vue'),

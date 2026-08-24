@@ -217,8 +217,56 @@ async function handleImportFile(event: Event) {
       <div class="skeleton h-20 w-3/4"></div>
     </div>
 
+    <!-- Analysis card -->
+    <router-link
+      v-if="!loading && programs.length > 0"
+      to="/analysis"
+      class="block mb-6 card-hover p-4 active:scale-[0.98] transition-all bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/40 dark:to-purple-950/40 border-indigo-200 dark:border-indigo-800"
+    >
+      <div class="flex items-center gap-3">
+        <div
+          class="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center"
+        >
+          <svg
+            class="w-5 h-5 text-indigo-600 dark:text-indigo-400"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+            />
+          </svg>
+        </div>
+        <div class="flex-1">
+          <p class="font-semibold text-gray-900 dark:text-white text-sm">
+            Аналіз прогресу
+          </p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            Рекомендації на основі ваших тренувань
+          </p>
+        </div>
+        <svg
+          class="w-5 h-5 text-gray-400"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M9 5l7 7-7 7"
+          />
+        </svg>
+      </div>
+    </router-link>
+
     <!-- Empty state -->
-    <div v-else-if="programs.length === 0" class="text-center py-12">
+    <div v-if="!loading && programs.length === 0" class="text-center py-12">
       <div
         class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center"
       >
@@ -245,7 +293,7 @@ async function handleImportFile(event: Event) {
     </div>
 
     <!-- Programs list -->
-    <template v-else>
+    <template v-if="!loading && programs.length > 0">
       <!-- Active programs -->
       <div v-if="activePrograms.length > 0" class="mb-6">
         <h3
