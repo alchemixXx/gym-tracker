@@ -6,7 +6,7 @@
 
 - **Платформа:** Mobile-first PWA (працює як додаток на Android через браузер)
 - **Мова інтерфейсу:** Українська
-- **Користувачі:** Мультикористувацький (вибір профілю без авторизації)
+- **Користувачі:** Мультикористувацький, авторизація через magic-link (JWT access + refresh)
 - **Синхронізація:** Між пристроями через API (телефон + комп'ютер)
 
 ## Технічний стек
@@ -43,12 +43,25 @@ gym-tracker/
     │   ├── db/
     │   │   ├── pool.ts       ← pg Pool (DATABASE_URL || default)
     │   │   ├── migrate.ts    ← Reads and runs SQL migrations
-    │   │   └── migrations/001_initial.sql
+    │   │   └── migrations/   ← 001_initial … 009_day_duration (інкрементальні SQL)
+    │   ├── middleware/
+    │   │   └── auth.ts        ← requireAuth (JWT), requireOwnership
+    │   ├── services/
+    │   │   ├── gymData.ts     ← спільний data-layer для MCP + routes
+    │   │   └── storage.ts     ← завантаження фото (S3/R2)
+    │   ├── mcp/
+    │   │   ├── server.ts      ← MCP server + інструменти
+    │   │   └── http.ts        ← MCP Streamable HTTP endpoint (/mcp)
     │   └── routes/
+    │       ├── auth.ts        ← magic-link, verify, claim, refresh, logout, me
     │       ├── users.ts
     │       ├── templates.ts
     │       ├── programs.ts
-    │       └── measurements.ts
+    │       ├── measurements.ts
+    │       ├── food.ts
+    │       ├── photos.ts
+    │       ├── sync.ts
+    │       └── analysis.ts
     └── tsconfig.json
 ```
 
@@ -275,6 +288,77 @@ DELETE /api/users/:userId/measurements/:id    — видалити
 ```
 GET    /api/health             — {status, db}
 ```
+
+---
+
+## MCP-сервер (доступ для LLM)
+
+Віддалений MCP-сервер (Model Context Protocol) дозволяє зовнішнім LLM-клієнтам (Claude Desktop, Kiro тощо) аналізувати прогрес і створювати/оновлювати програми та шаблони від імені користувача.
+
+### Архітектура
+
+- **Транспорт:** Streamable HTTP (official MCP TypeScript SDK), **stateless** — новий `McpServer` + transport на кожен запит.
+- **Монтування:** на той самий Express-застосунок, ендпоінт `POST /mcp` (поза `/api`, має власну авторизацію).
+- **Авторизація:** єдиний спільний секрет у заголовку `Authorization: Bearer <secret>`, що мапиться на одного користувача. Налаштовується через env:
+  - `MCP_SHARED_SECRET` — довгий випадковий рядок (напр. `openssl rand -hex 32`)
+  - `MCP_USER_ID` — id користувача, від імені якого діє сервер
+  - Якщо будь-яка змінна не задана — ендпоінт заблоковано (повертає 401), а не відкрито (fail-safe).
+
+### Структура коду (server/src/)
+
+```
+mcp/
+  server.ts        ← McpServer + 10 інструментів (zod-типізовані входи)
+  http.ts          ← Express router: bearer-secret auth → Streamable HTTP transport
+services/
+  gymData.ts       ← спільний data-layer (read + write), ті самі SQL-патерни, що й у routes
+```
+
+`gymData.ts` винесено окремо, щоб MCP-інструменти та HTTP-роути не розходилися.
+
+### Інструменти
+
+**Читання:** `list_programs`, `get_program`, `get_analysis`, `list_measurements`, `list_templates`, `get_template`
+
+**Запис:** `create_program`, `update_program`, `create_template`, `update_template`
+
+Запис обмежено лише програмами та шаблонами — сесії, заміри, харчування та фото через MCP не змінюються. `update_program` зберігає вже завершені дні й відмовляється редагувати завершені (read-only) програми — та сама логіка, що й у HTTP-роуті.
+
+### Підключення клієнтів
+
+**Kiro** (`.kiro/settings/mcp.json`) — прямий URL + заголовок:
+
+```json
+{
+  "mcpServers": {
+    "gym-tracker": {
+      "url": "https://<app>.onrender.com/mcp",
+      "headers": { "Authorization": "Bearer YOUR_SECRET" }
+    }
+  }
+}
+```
+
+**Claude Desktop** — UI конекторів підтримує лише OAuth, тому підключення йде через міст `mcp-remote` (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "gym-tracker": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://<app>.onrender.com/mcp",
+        "--header",
+        "Authorization:${AUTH_HEADER}"
+      ],
+      "env": { "AUTH_HEADER": "Bearer YOUR_SECRET" }
+    }
+  }
+}
+```
+
+> `Authorization:` без пробілу та винесення секрету в env — задокументований обхід бага екранування аргументів у `npx mcp-remote`, а не помилка.
 
 ---
 

@@ -13,6 +13,7 @@ import { foodRoutes } from './routes/food.js';
 import { photoRoutes } from './routes/photos.js';
 import { syncRoutes } from './routes/sync.js';
 import { analysisRoutes } from './routes/analysis.js';
+import { mcpRoutes } from './mcp/http.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -24,6 +25,10 @@ app.use(express.json());
 
 // Public routes (no auth required)
 app.use('/api/auth', authRoutes);
+
+// MCP server (Streamable HTTP) — gated by its own shared-secret bearer auth,
+// mapped to a single user via MCP_SHARED_SECRET + MCP_USER_ID env vars.
+app.use('/mcp', mcpRoutes);
 
 // Protected routes — require authentication
 // User CRUD (used for /api/users/me endpoint)
@@ -82,8 +87,12 @@ if (process.env.NODE_ENV === 'production') {
   const clientDist = path.join(__dirname, '../../client/dist');
   app.use(express.static(clientDist));
   app.get('*', (req, res) => {
-    // Don't serve SPA for API or well-known routes
-    if (req.path.startsWith('/api') || req.path.startsWith('/.well-known')) {
+    // Don't serve SPA for API, MCP, or well-known routes
+    if (
+      req.path.startsWith('/api') ||
+      req.path.startsWith('/mcp') ||
+      req.path.startsWith('/.well-known')
+    ) {
       return res.status(404).json({ error: 'Not found' });
     }
     res.sendFile(path.join(clientDist, 'index.html'));
