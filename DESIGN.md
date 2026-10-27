@@ -299,10 +299,25 @@ GET    /api/health             — {status, db}
 
 - **Транспорт:** Streamable HTTP (official MCP TypeScript SDK), **stateless** — новий `McpServer` + transport на кожен запит.
 - **Монтування:** на той самий Express-застосунок, ендпоінт `POST /mcp` (поза `/api`, має власну авторизацію).
-- **Авторизація:** єдиний спільний секрет у заголовку `Authorization: Bearer <secret>`, що мапиться на одного користувача. Налаштовується через env:
-  - `MCP_SHARED_SECRET` — довгий випадковий рядок (напр. `openssl rand -hex 32`)
-  - `MCP_USER_ID` — id користувача, від імені якого діє сервер
-  - Якщо будь-яка змінна не задана — ендпоінт заблоковано (повертає 401), а не відкрито (fail-safe).
+- **Авторизація:** заголовок `Authorization: Bearer <token>`. Перевіряються два механізми по черзі:
+  1. **Персональні токени користувачів** (таблиця `mcp_tokens`) — основний, мультикористувацький шлях. Токен хешується (SHA-256) і шукається в БД; збіг без `revoked` визначає `user_id`. Кожен користувач створює власний токен у Налаштуваннях.
+  2. **Єдиний спільний секрет (fallback)** через env `MCP_SHARED_SECRET` → `MCP_USER_ID` — залишено для сумісності зі старим одно-користувацьким налаштуванням. Якщо не задано — просто не використовується.
+- Якщо жоден механізм не дав збігу — `401`.
+
+### Персональні MCP-токени (мультикористувацький доступ)
+
+- Таблиця `mcp_tokens (id, user_id, token_hash, label, created_at, last_used_at, revoked)`. Зберігається лише SHA-256 хеш; сирий токен показується **один раз** при створенні.
+- Токен має префікс `gymmcp_` + 64 hex-символи.
+- `last_used_at` оновлюється при кожному використанні (best-effort).
+- **Ендпоінти** (під `requireAuth` + перевірка власності, користувач керує лише своїми токенами):
+  ```
+  GET    /api/users/:userId/mcp-tokens        — список (без сирих значень)
+  POST   /api/users/:userId/mcp-tokens         — створити {label?}, повертає {token} один раз
+  DELETE /api/users/:userId/mcp-tokens/:id     — відкликати (soft-delete, revoked=TRUE)
+  ```
+- **UI:** секція «MCP-доступ» у Налаштуваннях — створення (з назвою), показ токена один раз + готовий конфіг-сніпет, список із датами та кнопкою «Відкликати».
+
+> **Безпека:** перевірку власності для всіх user-scoped роутів забезпечує middleware у `index.ts`, що читає `:userId` з URL (router-level `param('userId')` НЕ спрацьовує для sub-routers, змонтованих через `.use()`).
 
 ### Структура коду (server/src/)
 
@@ -326,39 +341,13 @@ services/
 
 ### Підключення клієнтів
 
-**Kiro** (`.kiro/settings/mcp.json`) — прямий URL + заголовок:
+Покрокові конфіги для **Kiro, Cursor, Codex та Claude Desktop** — у [`docs/MCP-CLIENTS.md`](docs/MCP-CLIENTS.md).
 
-```json
-{
-  "mcpServers": {
-    "gym-tracker": {
-      "url": "https://<app>.onrender.com/mcp",
-      "headers": { "Authorization": "Bearer YOUR_SECRET" }
-    }
-  }
-}
-```
+Коротко:
 
-**Claude Desktop** — UI конекторів підтримує лише OAuth, тому підключення йде через міст `mcp-remote` (`claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "gym-tracker": {
-      "command": "npx",
-      "args": [
-        "mcp-remote",
-        "https://<app>.onrender.com/mcp",
-        "--header",
-        "Authorization:${AUTH_HEADER}"
-      ],
-      "env": { "AUTH_HEADER": "Bearer YOUR_SECRET" }
-    }
-  }
-}
-```
-
-> `Authorization:` без пробілу та винесення секрету в env — задокументований обхід бага екранування аргументів у `npx mcp-remote`, а не помилка.
+- **Kiro / Cursor** — пряма підтримка віддаленого HTTP: `url` + заголовок `Authorization: Bearer <token>`.
+- **Codex** — теж нативно, але конфіг у **TOML**, а токен передається через ім'я env-змінної (`codex mcp add … --bearer-token-env-var`).
+- **Claude Desktop** — UI конекторів підтримує лише OAuth, тому підключення йде через локальний міст `mcp-remote` (`Authorization:` без пробілу, секрет в env — обхід бага екранування у `npx`).
 
 ---
 

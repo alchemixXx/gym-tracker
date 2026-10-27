@@ -551,4 +551,32 @@ export const api = {
 
   // Sync
   syncAll: (userId: number) => request<any>(`/users/${userId}/sync`),
+
+  // MCP tokens
+  getMcpTokens: (userId: number) =>
+    request<
+      {
+        id: number;
+        label: string | null;
+        created_at: string;
+        last_used_at: string | null;
+        revoked: boolean;
+      }[]
+    >(`/users/${userId}/mcp-tokens`),
+  createMcpToken: (userId: number, label?: string) =>
+    request<{
+      id: number;
+      label: string | null;
+      created_at: string;
+      last_used_at: string | null;
+      revoked: boolean;
+      token: string;
+    }>(`/users/${userId}/mcp-tokens`, {
+      method: 'POST',
+      body: JSON.stringify({ label }),
+    }),
+  deleteMcpToken: (userId: number, id: number) =>
+    request<{ message: string }>(`/users/${userId}/mcp-tokens/${id}`, {
+      method: 'DELETE',
+    }),
 };

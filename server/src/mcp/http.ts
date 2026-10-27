@@ -1,17 +1,20 @@
 import { Router, type Request, type Response } from 'express';
 import type { IncomingMessage, ServerResponse } from 'http';
+import { createHash } from 'crypto';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { buildMcpServer } from './server.js';
+import { pool } from '../db/pool.js';
 
 /**
  * Express router that exposes the gym-tracker MCP server over Streamable HTTP
  * at POST/GET/DELETE /mcp, mounted on the main app.
  *
- * Auth: a single shared secret (MCP_SHARED_SECRET) sent as
- *   Authorization: Bearer <secret>
- * maps to one fixed user (MCP_USER_ID). This is a deliberate single-user design
- * for a personal deployment. To support multiple users later, replace
- * resolveUser() with a per-secret lookup (e.g. a tokens table).
+ * Auth (two mechanisms, checked in order):
+ *   1. Per-user DB tokens (mcp_tokens): the bearer token is SHA-256 hashed and
+ *      looked up; a non-revoked match resolves to that row's user_id. This is
+ *      the multi-user path — each user mints their own token in Settings.
+ *   2. Single shared-secret fallback (MCP_SHARED_SECRET → MCP_USER_ID env):
+ *      kept so an existing single-user setup keeps working without a DB token.
  *
  * Transport mode: stateless. A fresh McpServer + transport pair is created per
  * request and torn down when the response closes. This avoids server-side
@@ -23,22 +26,66 @@ export const mcpRoutes = Router();
 const MCP_SHARED_SECRET = process.env.MCP_SHARED_SECRET || '';
 const MCP_USER_ID = parseInt(process.env.MCP_USER_ID || '', 10);
 
-function resolveUser(req: Request): number | null {
-  if (!MCP_SHARED_SECRET || Number.isNaN(MCP_USER_ID)) {
-    // Not configured — treat as disabled rather than insecurely open.
-    return null;
-  }
+/** SHA-256 hex of a raw token — the form stored in mcp_tokens.token_hash. */
+export function hashToken(raw: string): string {
+  return createHash('sha256').update(raw).digest('hex');
+}
+
+function extractBearer(req: Request): string | null {
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) return null;
   const token = header.slice(7).trim();
+  return token.length > 0 ? token : null;
+}
 
-  // Constant-time-ish comparison: length check then char compare.
-  if (token.length !== MCP_SHARED_SECRET.length) return null;
+/** Constant-time string comparison (avoids leaking length-independent timing). */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
   let mismatch = 0;
-  for (let i = 0; i < token.length; i++) {
-    mismatch |= token.charCodeAt(i) ^ MCP_SHARED_SECRET.charCodeAt(i);
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
-  return mismatch === 0 ? MCP_USER_ID : null;
+  return mismatch === 0;
+}
+
+/**
+ * Resolve the bearer token to a user id, or null if unauthorized.
+ * Checks the shared-secret env fallback first (cheap, no DB), then the
+ * mcp_tokens table. Bumps last_used_at on a DB token match (best-effort).
+ */
+async function resolveUser(req: Request): Promise<number | null> {
+  const token = extractBearer(req);
+  if (!token) return null;
+
+  // 1. Shared-secret env fallback
+  if (
+    MCP_SHARED_SECRET &&
+    !Number.isNaN(MCP_USER_ID) &&
+    timingSafeEqual(token, MCP_SHARED_SECRET)
+  ) {
+    return MCP_USER_ID;
+  }
+
+  // 2. Per-user DB token lookup (by hash)
+  try {
+    const result = await pool.query(
+      'SELECT id, user_id FROM mcp_tokens WHERE token_hash = $1 AND revoked = FALSE',
+      [hashToken(token)],
+    );
+    if (result.rows.length === 0) return null;
+
+    const row = result.rows[0];
+    // Best-effort last-used timestamp; don't fail the request if this errors.
+    pool
+      .query('UPDATE mcp_tokens SET last_used_at = NOW() WHERE id = $1', [
+        row.id,
+      ])
+      .catch(() => {});
+    return row.user_id;
+  } catch (err) {
+    console.error('MCP token lookup failed:', err);
+    return null;
+  }
 }
 
 function unauthorized(res: Response) {
@@ -54,7 +101,7 @@ function unauthorized(res: Response) {
  * the body for POST; we pass it through to the transport.
  */
 async function handleMcp(req: Request, res: Response) {
-  const userId = resolveUser(req);
+  const userId = await resolveUser(req);
   if (userId === null) return unauthorized(res);
 
   const server = buildMcpServer(userId);
@@ -94,8 +141,8 @@ async function handleMcp(req: Request, res: Response) {
 // have no session to act on, so we reject them cleanly after the auth gate.
 mcpRoutes.post('/', handleMcp);
 
-mcpRoutes.get('/', (req, res) => {
-  if (resolveUser(req) === null) return unauthorized(res);
+mcpRoutes.get('/', async (req, res) => {
+  if ((await resolveUser(req)) === null) return unauthorized(res);
   res.status(405).json({
     jsonrpc: '2.0',
     error: { code: -32000, message: 'Method not allowed (stateless server)' },
@@ -103,8 +150,8 @@ mcpRoutes.get('/', (req, res) => {
   });
 });
 
-mcpRoutes.delete('/', (req, res) => {
-  if (resolveUser(req) === null) return unauthorized(res);
+mcpRoutes.delete('/', async (req, res) => {
+  if ((await resolveUser(req)) === null) return unauthorized(res);
   res.status(405).json({
     jsonrpc: '2.0',
     error: { code: -32000, message: 'Method not allowed (stateless server)' },

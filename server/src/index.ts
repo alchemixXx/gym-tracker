@@ -13,6 +13,7 @@ import { foodRoutes } from './routes/food.js';
 import { photoRoutes } from './routes/photos.js';
 import { syncRoutes } from './routes/sync.js';
 import { analysisRoutes } from './routes/analysis.js';
+import { mcpTokenRoutes } from './routes/mcpTokens.js';
 import { mcpRoutes } from './mcp/http.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -35,14 +36,27 @@ app.use('/mcp', mcpRoutes);
 app.use('/api/users', requireAuth, userRoutes);
 
 // All user-scoped data routes — require auth + ownership
-// These routes all use /:userId/... paths internally
+// These routes all use /:userId/... paths internally.
+//
+// NOTE: a router-level `param('userId', ...)` callback does NOT fire for params
+// consumed inside sub-routers mounted with `.use()`, so ownership must be
+// enforced by a middleware that inspects the URL directly. The middleware below
+// runs on every request into this router, before any sub-router, and rejects
+// requests whose leading path segment (the :userId) differs from the
+// authenticated user's id.
 const protectedUserData = express.Router({ mergeParams: true });
 protectedUserData.use(requireAuth);
-protectedUserData.param('userId', (req, res, next, userId) => {
+protectedUserData.use((req, res, next) => {
   if (!req.auth) {
     return res.status(401).json({ error: 'Authentication required' });
   }
-  if (parseInt(userId, 10) !== req.auth.sub) {
+  // req.url here is relative to the mount point (/api/users), e.g. "/2/programs".
+  const match = req.url.match(/^\/(\d+)(?:\/|$)/);
+  if (!match) {
+    // No leading numeric user id — these routes always have one, so reject.
+    return res.status(400).json({ error: 'Invalid user path' });
+  }
+  if (parseInt(match[1], 10) !== req.auth.sub) {
     return res.status(403).json({ error: 'Access denied' });
   }
   next();
@@ -54,6 +68,7 @@ protectedUserData.use(foodRoutes);
 protectedUserData.use(photoRoutes);
 protectedUserData.use(syncRoutes);
 protectedUserData.use(analysisRoutes);
+protectedUserData.use(mcpTokenRoutes);
 app.use('/api/users', protectedUserData);
 
 // Android App Links verification
